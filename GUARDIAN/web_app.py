@@ -32,6 +32,7 @@ from ai_client.autonomous import IntegrationHub, SystemAnalysisAgent, Autonomous
 from ai_client.tools.home_tools import HomeTools
 from ai_client.tools.vision_service import vision_service
 from ai_client.tools.vision_tools import vision_tools
+from ai_client.tools.audio_tools import AudioTools
 from ai_client.core.response_processor import ResponseProcessor
 from ai_client.tools.chat_summary_tools import ChatSummaryTools
 from memory.user_profiles import UserProfile
@@ -77,6 +78,8 @@ websocket_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(lev
 logger.addHandler(websocket_handler)
 
 app = FastAPI(title="ΔΣ Guardian - Superintelligent Family Architect", version="1.0.0")
+# Audio tools singleton
+audio_tools = AudioTools()
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -730,6 +733,41 @@ async def chat_page(request: Request):
         "username": username,
         "moment_time": datetime.now().strftime("%I:%M %p")
     })
+
+# ===== Audio trigger UI and API =====
+@app.get("/audio", response_class=HTMLResponse)
+async def audio_page(request: Request):
+    username = get_current_user(request)
+    if not username:
+        return RedirectResponse(url="/", status_code=302)
+    html = """
+    <!DOCTYPE html>
+    <html><head><meta charset='utf-8'><title>Audio Trigger</title>
+    <link rel="stylesheet" href="/static/css/guardian.css" />
+    </head><body style="padding:24px">
+    <h2>Audio Trigger</h2>
+    <button id="btn" style="padding:10px 16px">🎤 Listen 5s</button>
+    <pre id="out" style="white-space:pre-wrap;margin-top:16px"></pre>
+    <script>
+    document.getElementById('btn').onclick = async ()=>{
+      const fd = new FormData(); fd.append('seconds','5');
+      const r = await fetch('/api/audio/listen', {method:'POST', body:fd, credentials:'include'});
+      const j = await r.json();
+      document.getElementById('out').textContent = JSON.stringify(j, null, 2);
+    };
+    </script>
+    </body></html>
+    """
+    return HTMLResponse(html)
+
+@app.post("/api/audio/listen")
+async def api_audio_listen(request: Request, seconds: int = Form(5), language: str = Form("ru-RU")):
+    try:
+        res = audio_tools.listen(seconds=seconds, language=language)
+        data = json.loads(res)
+        return JSONResponse({"success": True, "result": data})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(
