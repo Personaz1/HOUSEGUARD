@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+.env
+.venv/
+**/.venv/
+.envrc
+*.egg-info/
+*.egg
+.DS_Store
+
+# Node
+node_modules/
+
+# Logs
+*.log
+app.log
+app.log.*
+
+# Build
+/dist/
+/build/
+
+# Cache/data
+.cache/
+*.sqlite
+*.db
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+
+# Docker/minio persistent data
+SMARTHOUSE/infra/minio/data/
+
+# Large local artifacts
+GUARDIAN/memory/captures/*.jpg
+GUARDIAN/memory/captures/*_analysis.json
