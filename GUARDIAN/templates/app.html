@@ -63,7 +63,12 @@
           <div id="tasks"></div>
         </div>
         <div id="view-vision" style="display:none; padding:12px">
-          <div class="muted" id="visionStatus">Vision status: —</div>
+          <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px">
+            <div class="muted" id="visionStatus">Vision status: —</div>
+            <button class="button" id="capture">Capture</button>
+            <button class="button" id="analyze">Analyze latest</button>
+          </div>
+          <pre id="visionOut" class="muted"></pre>
         </div>
         <div id="view-audio" style="display:none; padding:12px">
           <button class="button" id="listen5">🎤 Listen 5s</button>
@@ -375,6 +380,16 @@
       const r = await fetch('/api/audio/listen', {method:'POST', body:fd, credentials:'include'});
       const j = await r.json();
       document.getElementById('audioOut').textContent = JSON.stringify(j, null, 2);
+    });
+    document.getElementById('capture')?.addEventListener('click', async ()=>{
+      const r = await fetch('/api/vision/capture', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({})});
+      const j = await r.json();
+      document.getElementById('visionOut').textContent = JSON.stringify(j, null, 2);
+    });
+    document.getElementById('analyze')?.addEventListener('click', async ()=>{
+      const r = await fetch('/api/vision/analyze-latest', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({})});
+      const j = await r.json();
+      document.getElementById('visionOut').textContent = JSON.stringify(j, null, 2);
     });
     document.getElementById('switchModel')?.addEventListener('click', async ()=>{
       const sel = document.getElementById('modelSelect');

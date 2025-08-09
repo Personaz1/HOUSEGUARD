@@ -209,6 +209,48 @@ async def update_vision_settings(request: Request):
         "default_camera_id": os.getenv("VISION_CAMERA_ID", "0"),
     }}
 
+# --- Vision capture/analyze helpers ---
+@app.post("/api/vision/capture")
+async def api_vision_capture(request: Request):
+    try:
+        try:
+            payload = await request.json()
+        except Exception:
+            form = await request.form()
+            payload = {"camera_id": form.get("camera_id", "default")}
+        camera_id = str(payload.get("camera_id", os.getenv("VISION_CAMERA_ID", "default")))
+        res = vision_tools.capture_image(camera_id)
+        # vision_tools returns JSON string sometimes
+        try:
+            data = json.loads(res) if isinstance(res, str) else res
+        except Exception:
+            data = {"raw": res}
+        return JSONResponse({"success": True, "result": data})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+@app.post("/api/vision/analyze-latest")
+async def api_vision_analyze_latest(request: Request):
+    try:
+        # Try explicit image_path first
+        try:
+            payload = await request.json()
+        except Exception:
+            form = await request.form()
+            payload = {"image_path": form.get("image_path")}
+        image_path = payload.get("image_path")
+        if not image_path:
+            # default latest capture path
+            image_path = os.path.join("memory", "captures", "capture_default_latest.jpg")
+        res = vision_tools.analyze_image(image_path)
+        try:
+            data = json.loads(res) if isinstance(res, str) else res
+        except Exception:
+            data = {"raw": res}
+        return JSONResponse({"success": True, "result": data, "image_path": image_path})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
 # --- Vision settings page ---
 @app.get("/vision", response_class=HTMLResponse)
 async def vision_page(request: Request):
