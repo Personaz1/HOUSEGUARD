@@ -235,6 +235,19 @@
       }
     }
 
+    async function loadHistory(limit=20) {
+      try {
+        const r = await fetch(`/api/conversation-history?limit=${limit}`, {credentials:'include'});
+        const j = await r.json();
+        if (!j?.success) return;
+        // Render minimal bubbles: user and ai_response per item
+        for (const m of j.history || []) {
+          addBubble('user', (m.message||''));
+          addBubble('ai', (m.ai_response||''));
+        }
+      } catch {}
+    }
+
     function switchView(name) {
       const title = document.getElementById('title');
       for (const el of document.querySelectorAll('[id^="view-"]')) el.style.display = 'none';
@@ -365,6 +378,7 @@
     getPresence();
     refreshModel();
     subscribeFeed();
+    loadHistory(10);
   </script>
 </body>
 </html>
