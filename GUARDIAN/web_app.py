@@ -676,7 +676,7 @@ async def login(
         except Exception:
             pass
         session_id = create_session(username)
-        response = RedirectResponse(url="/chat", status_code=302)
+        response = RedirectResponse(url="/app", status_code=302)
         response.set_cookie(
             key="session_id",
             value=session_id,
