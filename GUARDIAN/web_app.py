@@ -1163,6 +1163,52 @@ async def get_profile(request: Request):
             "error": str(e)
         }, status_code=500)
 
+# --- New lightweight API for SPA ---
+
+@app.get("/api/system-task")
+async def list_system_tasks():
+    """List all system tasks (shallow)."""
+    try:
+        return JSONResponse({
+            "success": True,
+            "tasks": list(system_tasks.values())
+        })
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+@app.post("/api/system-task/{task_id}/cancel")
+async def cancel_system_task(task_id: str):
+    rec = system_tasks.get(task_id)
+    if not rec:
+        return JSONResponse({"success": False, "error": "task not found"}, status_code=404)
+    rec["status"] = "cancelled"
+    rec["cancel_requested"] = True
+    rec["last_update"] = datetime.now().isoformat()
+    return JSONResponse({"success": True, "task": rec})
+
+@app.get("/api/house/events")
+async def get_house_events(limit: int = 50):
+    try:
+        ev = list(_smarthouse_events)[-abs(limit):]
+        return JSONResponse({"success": True, "events": ev})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+@app.get("/api/presence")
+async def api_presence():
+    try:
+        return JSONResponse({"success": True, "presence": _get_presence_snapshot()})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+@app.get("/api/home/state")
+async def api_home_state():
+    try:
+        state = home_tools.get_state()
+        return JSONResponse({"success": True, "state": state})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
 @app.get("/api/profile/{username}")
 async def get_profile_by_username(request: Request, username: str):
     """Get profile by username (for avatar loading)"""

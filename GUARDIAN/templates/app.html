@@ -29,12 +29,12 @@
 <body>
   <div class="shell" id="app">
     <div class="nav">
-      <div class="item active" title="Chat">💬</div>
-      <div class="item" title="Tasks">🗂️</div>
-      <div class="item" title="Vision">📷</div>
-      <div class="item" title="Audio">🎙️</div>
-      <div class="item" title="Home">🏠</div>
-      <div class="item" title="Settings">⚙️</div>
+      <div class="item active" data-view="chat" title="Chat">💬</div>
+      <div class="item" data-view="tasks" title="Tasks">🗂️</div>
+      <div class="item" data-view="vision" title="Vision">📷</div>
+      <div class="item" data-view="audio" title="Audio">🎙️</div>
+      <div class="item" data-view="home" title="Home">🏠</div>
+      <div class="item" data-view="settings" title="Settings">⚙️</div>
     </div>
     <div class="main">
       <div class="sidebar">
@@ -43,11 +43,31 @@
         <div id="feed" style="flex:1; overflow:auto; padding:8px 12px"></div>
       </div>
       <div class="content">
-        <div class="topbar"><span class="pill">Chat</span><span class="muted" id="model">model: —</span></div>
-        <div class="chat" id="chat"></div>
-        <div class="composer">
-          <textarea id="input" placeholder="Type a message…"></textarea>
-          <button id="send">Send</button>
+        <div class="topbar"><span class="pill" id="title">Chat</span><span class="muted" id="model">model: —</span></div>
+        <div id="view-chat">
+          <div class="chat" id="chat"></div>
+          <div class="composer">
+            <textarea id="input" placeholder="Type a message…"></textarea>
+            <button id="send">Send</button>
+          </div>
+        </div>
+        <div id="view-tasks" style="display:none; padding:12px">
+          <div style="margin-bottom:8px" class="muted">Background tasks</div>
+          <div id="tasks"></div>
+        </div>
+        <div id="view-vision" style="display:none; padding:12px">
+          <div class="muted" id="visionStatus">Vision status: —</div>
+        </div>
+        <div id="view-audio" style="display:none; padding:12px">
+          <button class="button" id="listen5">🎤 Listen 5s</button>
+          <pre class="muted" id="audioOut"></pre>
+        </div>
+        <div id="view-home" style="display:none; padding:12px">
+          <div class="muted">Home state snapshot</div>
+          <pre id="homeState" style="white-space:pre-wrap"></pre>
+        </div>
+        <div id="view-settings" style="display:none; padding:12px">
+          <div class="muted">Settings (stub)</div>
         </div>
       </div>
     </div>
@@ -167,6 +187,69 @@
       }
     }
 
+    function switchView(name) {
+      const title = document.getElementById('title');
+      for (const el of document.querySelectorAll('[id^="view-"]')) el.style.display = 'none';
+      const target = document.getElementById('view-'+name);
+      if (target) target.style.display = '';
+      title.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+      for (const it of document.querySelectorAll('.nav .item')) it.classList.remove('active');
+      const act = document.querySelector('.nav .item[data-view="'+name+'"]');
+      if (act) act.classList.add('active');
+      if (name === 'tasks') refreshTasks();
+      if (name === 'home') refreshHome();
+      if (name === 'vision') refreshVision();
+    }
+
+    async function refreshTasks() {
+      try {
+        const r = await fetch('/api/system-task', {credentials:'include'});
+        const j = await r.json();
+        const box = document.getElementById('tasks');
+        box.innerHTML = '';
+        if (!j.success) { box.textContent = 'Error: ' + j.error; return; }
+        for (const t of j.tasks || []) {
+          const row = document.createElement('div');
+          row.className = 'bubble';
+          row.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><div class="muted">${t.id}</div><div>${t.description||''}</div><div class="muted">${t.status}</div></div><div><button class="button" data-id="${t.id}">Cancel</button></div></div>`;
+          row.querySelector('button').onclick = async (e)=>{
+            const id = e.target.getAttribute('data-id');
+            await fetch(`/api/system-task/${id}/cancel`, {method:'POST', credentials:'include'});
+            refreshTasks();
+          };
+          box.appendChild(row);
+        }
+      } catch {}
+    }
+
+    async function refreshHome() {
+      try {
+        const r = await fetch('/api/home/state', {credentials:'include'});
+        const j = await r.json();
+        document.getElementById('homeState').textContent = JSON.stringify(j.state || j, null, 2);
+      } catch {}
+    }
+
+    async function refreshVision() {
+      try {
+        const r = await fetch('/api/vision/settings', {credentials:'include'});
+        const j = await r.json();
+        document.getElementById('visionStatus').textContent = 'Vision status: ' + (j?.settings?.presence_enabled ? 'enabled' : 'disabled');
+      } catch {}
+    }
+
+    for (const it of document.querySelectorAll('.nav .item')) {
+      it.addEventListener('click', ()=> switchView(it.getAttribute('data-view')));
+    }
+
+    document.getElementById('listen5')?.addEventListener('click', async ()=>{
+      const fd = new FormData(); fd.append('seconds','5');
+      const r = await fetch('/api/audio/listen', {method:'POST', body:fd, credentials:'include'});
+      const j = await r.json();
+      document.getElementById('audioOut').textContent = JSON.stringify(j, null, 2);
+    });
+
+    switchView('chat');
     sendBtn.addEventListener('click', send);
     inputEl.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }});
 
