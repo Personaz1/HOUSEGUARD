@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vision Settings</title>
+  <link rel="stylesheet" href="/static/css/guardian.css" />
+  <style>
+    .container { max-width: 920px; margin: 24px auto; padding: 16px; background: rgba(255,255,255,0.12); border-radius: 12px; }
+    .row { display: flex; gap: 16px; }
+    .card { flex: 1; padding: 16px; background: rgba(0,0,0,0.25); border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); }
+    label { display:block; margin: 8px 0 4px; font-weight: 600; }
+    input, textarea { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: #fff; }
+    .btn { padding: 10px 14px; border-radius: 10px; border: none; background: #6c63ff; color: #fff; cursor: pointer; }
+    .btn.secondary { background: #444; }
+    .list { max-height: 240px; overflow: auto; background: rgba(255,255,255,0.06); padding: 8px; border-radius: 8px; }
+    .kv { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>👁️ Vision Settings</h2>
+    <p>Manage camera presence detection (throttled) and allowed camera IDs.</p>
+
+    <div class="row">
+      <div class="card">
+        <h3>Settings</h3>
+        <label>
+          <input type="checkbox" id="presenceEnabled"> Presence detection enabled
+        </label>
+        <label for="defaultCamera">Default camera ID</label>
+        <input id="defaultCamera" placeholder="e.g., 0 or rtsp://..." />
+        <label for="allowedIds">Allowed IDs (comma-separated)</label>
+        <input id="allowedIds" placeholder="e.g., 0,2,rtsp://..." />
+        <div style="margin-top:12px; display:flex; gap:8px;">
+          <button class="btn" onclick="saveSettings()">💾 Save</button>
+          <button class="btn secondary" onclick="loadSettings()">⟳ Reload</button>
+        </div>
+        <div id="saveMsg" style="margin-top:10px; opacity:.85;"></div>
+      </div>
+      <div class="card">
+        <h3>Discovered Cameras</h3>
+        <div class="list kv" id="cameraList">Loading…</div>
+        <div style="margin-top:10px; display:flex; gap:8px;">
+          <button class="btn secondary" onclick="discover()">🔎 Discover</button>
+          <button class="btn" onclick="testPresence()">👤 Test Presence</button>
+        </div>
+        <div id="presenceOut" class="kv" style="margin-top:8px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadSettings() {
+      const r = await fetch('/api/vision/settings', { credentials: 'include' });
+      const j = await r.json();
+      if (!j.success) return;
+      const s = j.settings || {};
+      document.getElementById('presenceEnabled').checked = !!s.presence_enabled;
+      document.getElementById('defaultCamera').value = s.default_camera_id || '';
+      document.getElementById('allowedIds').value = (s.allowed_ids || []).join(',');
+    }
+    async function saveSettings() {
+      const body = {
+        presence_enabled: document.getElementById('presenceEnabled').checked,
+        default_camera_id: document.getElementById('defaultCamera').value.trim(),
+        allowed_ids: document.getElementById('allowedIds').value.split(',').map(x => x.trim()).filter(Boolean)
+      };
+      const r = await fetch('/api/vision/settings', { method:'POST', headers:{'content-type':'application/json'}, credentials: 'include', body: JSON.stringify(body)});
+      const j = await r.json();
+      const msg = document.getElementById('saveMsg');
+      msg.textContent = j.success ? '✅ Saved' : ('❌ ' + (j.error || 'Failed'));
+      setTimeout(()=>msg.textContent='', 2000);
+    }
+    async function discover() {
+      const r = await fetch('/api/vision/cameras');
+      const j = await r.json();
+      const box = document.getElementById('cameraList');
+      if (!j.success) { box.textContent = 'Error: ' + j.error; return; }
+      box.textContent = JSON.stringify(j.result, null, 2);
+    }
+    async function testPresence() {
+      const id = document.getElementById('defaultCamera').value.trim() || 'default';
+      const r = await fetch('/api/vision/presence/' + encodeURIComponent(id));
+      const j = await r.json();
+      document.getElementById('presenceOut').textContent = JSON.stringify(j, null, 2);
+    }
+    loadSettings();
+    discover();
+  </script>
+</body>
+</html>
+

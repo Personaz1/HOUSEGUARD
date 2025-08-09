@@ -29,7 +29,16 @@ class HomeTools:
     def _post(self, path: str, payload: Dict[str, Any], headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         url = f"{self._base}{path}"
         r = requests.post(url, data=json.dumps(payload), headers=self._headers(headers), timeout=self._timeout)
-        r.raise_for_status()
+        try:
+            r.raise_for_status()
+        except Exception as e:
+            # Возвращаем полезное тело ошибки, чтобы чат и System Analysis видели детали
+            detail = {}
+            try:
+                detail = r.json()
+            except Exception:
+                detail = {"raw": r.text}
+            raise RuntimeError(f"HTTP {r.status_code} POST {url}: {detail}") from e
         return r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
 
     def _get(self, path: str, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:

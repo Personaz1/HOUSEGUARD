@@ -365,14 +365,13 @@ class ResponseFormatter:
     def format_for_chat(self, text: str, tool_results: List[Dict[str, Any]]) -> str:
         """Форматирует ответ для отображения в чате"""
         formatted_text = text
-        
-        # Добавляем результаты выполнения инструментов
+        # Добавляем результаты выполнения инструментов, но не «съедаем» остальной ответ
         for result in tool_results:
-            if result.get('success'):
-                formatted_text += f"\n\n✅ {result.get('result', '')}"
-            else:
-                formatted_text += f"\n\n❌ Error: {result.get('error', '')}"
-        
+            prefix = "✅" if result.get('success') else "❌"
+            payload = result.get('result') if result.get('success') else result.get('error')
+            if payload is None:
+                payload = ""
+            formatted_text += f"\n\n{prefix} {payload}"
         return formatted_text
 
 class ResponseProcessor:

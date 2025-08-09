@@ -299,6 +299,21 @@ class SystemTools:
         except Exception as e:
             return f"❌ notify error: {e}"
 
+    def system_task_submit(self, description: str) -> str:
+        """Запустить фоновую агентную системную задачу через HTTP API веб‑приложения.
+        Возвращает task_id либо ошибку."""
+        try:
+            base = os.getenv('GUARDIAN_BASE_URL', 'http://localhost:8002')
+            url = f"{base}/api/system-task/submit"
+            resp = requests.post(url, data={'description': description}, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get('success') and data.get('task_id'):
+                return f"SystemTask submitted: {data['task_id']}"
+            return f"❌ Submit failed: {data}"
+        except Exception as e:
+            return f"❌ Submit error: {e}"
+
     def message_ask_user(self, text: str, attachments: Optional[List[str]] = None, suggest_user_takeover: str = "none") -> str:
         try:
             log_path = os.path.join(self.project_root, 'guardian_sandbox', 'system_activity_log.txt')

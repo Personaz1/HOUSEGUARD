@@ -243,25 +243,22 @@ class VisionTools:
                 pass
 
             self.logger.info(f"🔍 Vision Tools: Глубокий анализ изображения завершен - {analysis_file}")
-            # Краткий исчерпывающий ответ для чата
-            summary_lines = [
-                f"Размер: {basic['dimensions']}, яркость: {basic['brightness']}, контраст: {basic['contrast']}, резкость: {basic['sharpness']}",
+            # Однострочный итог без лишнего шума
+            gv_faces = (gv_summary or {}).get('faces_detected') if isinstance(gv_summary, dict) else None
+            gv_objs = (gv_summary or {}).get('objects') if isinstance(gv_summary, dict) else None
+            gv_labels = (gv_summary or {}).get('labels') if isinstance(gv_summary, dict) else None
+            parts = [
+                f"{basic['dimensions']}",
+                f"bright {basic['brightness']}",
+                f"contrast {basic['contrast']}",
+                f"sharp {basic['sharpness']}",
+                f"faces {gv_faces if gv_faces is not None else '—'}",
+                f"objs {', '.join(gv_objs[:3]) if gv_objs else '—'}",
+                f"labels {', '.join(gv_labels[:3]) if gv_labels else '—'}",
             ]
-            if isinstance(gv_summary, dict) and not gv_summary.get('error'):
-                if gv_summary.get('labels'):
-                    summary_lines.append("GV labels: " + ", ".join(gv_summary['labels'][:5]))
-                if gv_summary.get('objects'):
-                    summary_lines.append("GV objects: " + ", ".join(gv_summary['objects'][:5]))
-                if gv_summary.get('text_sample'):
-                    summary_lines.append("GV text: " + gv_summary['text_sample'].replace('\n',' ')[:120])
-                summary_lines.append(f"GV faces: {gv_summary.get('faces_detected', 0)}")
-            elif isinstance(gv_summary, dict) and gv_summary.get('error'):
-                summary_lines.append(gv_summary['error'])
-
             if isinstance(llm_summary, str) and llm_summary.strip():
-                summary_lines.append("LLM: " + (llm_summary[:400] + ("..." if len(llm_summary) > 400 else "")))
-
-            return "✅ Анализ изображения:\n" + "\n".join(summary_lines)
+                parts.append("LLM " + llm_summary.replace('\n',' ')[:200])
+            return "✅ " + "; ".join(parts)
 
         except Exception as e:
             error_msg = f"❌ Ошибка при анализе изображения: {e}"
@@ -455,6 +452,13 @@ class VisionTools:
                 return f"❌ Ошибка: Не удалось получить кадр с камеры {camera_id}"
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # Улучшаем кадр для детекции: CLAHE и лёгкое размытие
+            try:
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                gray = clahe.apply(gray)
+            except Exception:
+                pass
+            gray = cv2.GaussianBlur(gray, (3, 3), 0)
             # Загружаем каскад лиц
             try:
                 import cv2.data as cv2data
@@ -466,12 +470,12 @@ class VisionTools:
                 cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 
             face_cascade = cv2.CascadeClassifier(cascade_path)
-            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(30, 30))
             faces_count = 0 if faces is None else len(faces)
 
             presence = faces_count > 0
-            # Простейшая уверенность: 0.8 если видим >=1 лицо, иначе 0.3
-            confidence = 0.8 if presence else 0.3
+            # Простейшая уверенность: повышаем при обнаружении, но не занижаем ниже 0.5
+            confidence = 0.8 if presence else 0.5
 
             result = {
                 "presence": presence,
@@ -486,6 +490,134 @@ class VisionTools:
 
         except Exception as e:
             error_msg = f"❌ Ошибка при оценке присутствия: {e}"
+            self.logger.error(error_msg)
+            return error_msg
+
+    def estimate_presence_smart(
+        self,
+        camera_id: str = "default",
+        window_frames: int = 8,
+        warmup_frames: int = 3,
+        min_brightness: float = 30.0,
+        motion_threshold: float = 0.02,
+    ) -> str:
+        """
+        Устойчивое определение присутствия с прогревом камеры, темпоральным окном и гейтингом по движению.
+        Использует MediaPipe (если доступен) и падает на Haar при недоступности.
+        """
+        try:
+            # Filter out Continuity Camera by default on macOS (to avoid iPhone auto-activation)
+            if str(camera_id).lower() in {"cc", "continuity", "iphone"}:
+                return "✅ Presence: " + json.dumps({
+                    "presence": False, "faces": 0, "confidence": 0.5,
+                    "timestamp": datetime.now().isoformat(),
+                    "camera_id": str(camera_id),
+                    "method": "skipped-continuity"
+                }, ensure_ascii=False)
+
+            if camera_id == "default" or camera_id == "webcam":
+                source = 0
+            else:
+                source = camera_id if not str(camera_id).isdigit() else int(camera_id)
+
+            cap = cv2.VideoCapture(source)
+            if not cap.isOpened():
+                return f"❌ Ошибка: Не удалось открыть камеру {camera_id}"
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+            frames = []
+            for _ in range(max(0, warmup_frames)):
+                cap.read()
+            for _ in range(max(1, window_frames)):
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    frames.append(frame)
+            cap.release()
+
+            if not frames:
+                return f"❌ Ошибка: Не удалось получить кадры с камеры {camera_id}"
+
+            gray_list = [cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) for f in frames]
+            brightness_vals = [float(np.mean(g)) for g in gray_list]
+            avg_brightness = float(np.mean(brightness_vals)) if brightness_vals else 0.0
+
+            motion_scores = []
+            for i in range(1, len(gray_list)):
+                diff = cv2.absdiff(gray_list[i], gray_list[i-1])
+                _, th = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
+                motion_scores.append(np.count_nonzero(th) / th.size)
+            avg_motion = float(np.mean(motion_scores)) if motion_scores else 0.0
+
+            if avg_brightness < min_brightness:
+                result = {
+                    "presence": False,
+                    "faces": 0,
+                    "confidence": 0.5,
+                    "timestamp": datetime.now().isoformat(),
+                    "camera_id": str(camera_id),
+                    "brightness": avg_brightness,
+                    "motion": avg_motion,
+                    "method": "smart-dark",
+                }
+                return "✅ Presence: " + json.dumps(result, ensure_ascii=False)
+
+            def detect_faces_mediapipe(frame_bgr) -> int:
+                try:
+                    import mediapipe as mp
+                    with mp.solutions.face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5) as fd:
+                        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                        out = fd.process(rgb)
+                        if out and out.detections:
+                            return len(out.detections)
+                except Exception:
+                    pass
+                return -1
+
+            def detect_faces_haar(gray_img) -> int:
+                try:
+                    import cv2.data as cv2data
+                    cascade_path = os.path.join(getattr(cv2data, 'haarcascades', ''), 'haarcascade_frontalface_default.xml')
+                    if not cascade_path or not os.path.exists(cascade_path):
+                        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                    face_cascade = cv2.CascadeClassifier(cascade_path)
+                    try:
+                        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                        enhanced = clahe.apply(gray_img)
+                    except Exception:
+                        enhanced = gray_img
+                    enhanced = cv2.GaussianBlur(enhanced, (3, 3), 0)
+                    faces = face_cascade.detectMultiScale(enhanced, scaleFactor=1.05, minNeighbors=3, minSize=(30, 30))
+                    return 0 if faces is None else len(faces)
+                except Exception:
+                    return 0
+
+            face_counts = []
+            for f, g in zip(frames, gray_list):
+                n = detect_faces_mediapipe(f)
+                if n < 0:
+                    n = detect_faces_haar(g)
+                face_counts.append(n)
+
+            faces_any = sum(1 for n in face_counts if n and n > 0)
+            presence = faces_any >= max(1, int(0.3 * len(face_counts)))
+            confidence = 0.8 if presence else (0.6 if avg_motion > motion_threshold else 0.5)
+
+            result = {
+                "presence": bool(presence),
+                "faces": int(max(face_counts) if face_counts else 0),
+                "confidence": float(confidence),
+                "timestamp": datetime.now().isoformat(),
+                "camera_id": str(camera_id),
+                "brightness": avg_brightness,
+                "motion": avg_motion,
+                "method": "smart-mediapipe+haar"
+            }
+            self.logger.info(f"👥 Vision Tools: SMART presence={presence} faces_max={result['faces']} motion={avg_motion:.3f} bright={avg_brightness:.1f}")
+            return "✅ Presence: " + json.dumps(result, ensure_ascii=False)
+
+        except Exception as e:
+            error_msg = f"❌ Ошибка при SMART-оценке присутствия: {e}"
             self.logger.error(error_msg)
             return error_msg
 

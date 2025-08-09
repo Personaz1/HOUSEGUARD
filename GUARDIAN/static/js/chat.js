@@ -1190,11 +1190,20 @@ async function loadSystemAnalysis() {
             const data = await response.json();
             
             if (data.success && data.analysis) {
-                // If merged result present, prefer llm_analysis + live_analysis
                 const analysis = data.analysis.llm_analysis || data.analysis;
-                updateSystemPanel(analysis);
-                
-                
+                if (analysis && typeof analysis.system_status === 'string') {
+                    document.querySelectorAll('#systemStatus').forEach(el => {
+                        el.innerHTML = `<div class="status-text">${escapeHtml(analysis.system_status)}</div>`;
+                    });
+                } else {
+                    updateSystemPanel(analysis);
+                }
+            } else {
+                // Fallback: render raw JSON to ensure user sees something
+                const statusElement = document.getElementById('systemStatus');
+                if (statusElement) {
+                    statusElement.innerHTML = `<pre class="json-view">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                }
             }
         } else {
             console.log('System analysis not available or failed to load');
@@ -1320,28 +1329,41 @@ async function showModelStatus() {
 
 function updateSystemPanel(analysis) {
     // Update system status for desktop
-    const statusElement = document.getElementById('systemStatus');
+    const statusElements = document.querySelectorAll('#systemStatus');
     
-    if (statusElement && analysis.system_status) {
-        // Handle system_status as object with multiple fields
-        let statusHtml = '';
-        if (typeof analysis.system_status === 'object') {
-            // Format object fields
-            for (const [key, value] of Object.entries(analysis.system_status)) {
-                const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                statusHtml += `
-                    <div class="status-section">
-                        <h5>${formattedKey}:</h5>
-                        <p>${typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</p>
-                    </div>
-                `;
+    statusElements.forEach((statusElement) => {
+        if (!statusElement) return;
+        if (analysis && analysis.system_status) {
+            let statusHtml = '';
+            if (typeof analysis.system_status === 'object') {
+                for (const [key, value] of Object.entries(analysis.system_status)) {
+                    const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    statusHtml += `
+                        <div class="status-section">
+                            <h5>${formattedKey}:</h5>
+                            <p>${typeof value === 'string' ? value : escapeHtml(JSON.stringify(value, null, 2))}</p>
+                        </div>
+                    `;
+                }
+            } else {
+                statusHtml = `<div class="status-text">${escapeHtml(String(analysis.system_status)).replace(/\n/g, '<br>')}</div>`;
             }
+            statusElement.innerHTML = statusHtml;
         } else {
-            // Handle as string
-            statusHtml = `<div class="status-text">${analysis.system_status.replace(/\n/g, '<br>')}</div>`;
+            // Fallback: show entire analysis as JSON
+            statusElement.innerHTML = `<pre class="json-view">${escapeHtml(JSON.stringify(analysis || {}, null, 2))}</pre>`;
         }
-        statusElement.innerHTML = statusHtml;
-    }
+    });
+}
+
+// Safe HTML escape for JSON rendering
+function escapeHtml(unsafe) {
+    return String(unsafe)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 function showSystemError(message) {
@@ -1352,8 +1374,8 @@ function showSystemError(message) {
     }
 }
 
-// Auto-refresh system analysis every 5 minutes
-setInterval(loadSystemAnalysis, 5 * 60 * 1000);
+// Auto-refresh system analysis more frequently (every 30s)
+setInterval(loadSystemAnalysis, 30 * 1000);
 
 // File upload functionality
 function initializeFileUpload() {
@@ -1956,9 +1978,7 @@ let terminalOutput = null;
 
 function initializeTerminal() {
     terminalOutput = document.getElementById('terminalOutput');
-    
-    // Connect to WebSocket
-    connectTerminalWebSocket();
+    // Lazy connect: do not auto-open WebSocket until user expands the terminal
     
     // Add terminal controls
     document.querySelector('.terminal-header').addEventListener('click', function(e) {
@@ -1969,9 +1989,12 @@ function initializeTerminal() {
 }
 
 function connectTerminalWebSocket() {
+    // Prevent duplicate connections
+    if (terminalWebSocket && (terminalWebSocket.readyState === WebSocket.OPEN || terminalWebSocket.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/logs`;
-    
     terminalWebSocket = new WebSocket(wsUrl);
     
     terminalWebSocket.onopen = function() {
@@ -1986,8 +2009,11 @@ function connectTerminalWebSocket() {
     
     terminalWebSocket.onclose = function() {
         addTerminalLine('🔌 Disconnected from log stream', 'error');
-        // Try to reconnect after 5 seconds
-        setTimeout(connectTerminalWebSocket, 5000);
+        // Reconnect only if terminal panel is expanded/visible
+        const terminal = document.getElementById('terminalPanel');
+        if (terminal && terminal.classList.contains('expanded')) {
+            setTimeout(connectTerminalWebSocket, 5000);
+        }
     };
     
     terminalWebSocket.onerror = function(error) {
@@ -2035,7 +2061,16 @@ function addTerminalLine(text, type = 'info') {
 
 function toggleTerminal() {
     const terminal = document.getElementById('terminalPanel');
+    const opening = !terminal.classList.contains('expanded');
     terminal.classList.toggle('expanded');
+    if (opening) {
+        connectTerminalWebSocket();
+    } else {
+        // closing
+        if (terminalWebSocket && terminalWebSocket.readyState === WebSocket.OPEN) {
+            terminalWebSocket.close();
+        }
+    }
 }
 
 function clearTerminal() {

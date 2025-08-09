@@ -10,6 +10,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
+import uuid
 from collections import deque
 from dotenv import load_dotenv
 
@@ -111,6 +112,100 @@ home_tools = HomeTools(base_url=SMARTHOUSE_BASE, role=os.getenv("SMARTHOUSE_ROLE
 _smarthouse_events: "deque[Dict[str, Any]]" = deque(maxlen=200)
 _sse_task: Optional[asyncio.Task] = None
 _analysis_task: Optional[asyncio.Task] = None
+# Track last authenticated user for background analysis
+CURRENT_USER: Optional[str] = None
+
+# In-memory store for background system tasks
+system_tasks: Dict[str, Dict[str, Any]] = {}
+
+# Presence snapshot cache to avoid hammering camera
+_presence_cache: Dict[str, Any] = {"ts": None, "data": None}
+
+# Presence feature toggle and camera allowlist
+VISION_PRESENCE_ENABLED: bool = os.getenv("VISION_PRESENCE_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+_allowed_ids_env = os.getenv("VISION_ALLOWED_IDS", "").strip()
+VISION_ALLOWED_IDS: List[str] = [s.strip() for s in _allowed_ids_env.split(",") if s.strip()] if _allowed_ids_env else []
+
+def _get_presence_snapshot() -> Dict[str, Any]:
+    try:
+        if not VISION_PRESENCE_ENABLED:
+            return {"disabled": True}
+        # Throttle to once per 120s
+        now = datetime.now()
+        ts = _presence_cache.get("ts")
+        if ts and (now - ts).total_seconds() < 120 and _presence_cache.get("data") is not None:
+            return _presence_cache["data"]
+        # Pick camera id: env VISION_CAMERA_ID, constrained by allowlist if present
+        configured_id = os.getenv("VISION_CAMERA_ID", "0")
+        camera_id = configured_id
+        if VISION_ALLOWED_IDS:
+            if configured_id not in VISION_ALLOWED_IDS:
+                camera_id = VISION_ALLOWED_IDS[0]
+        presence_raw = vision_tools.estimate_presence(camera_id)
+        try:
+            presence_parsed = json.loads(presence_raw)
+        except Exception:
+            presence_parsed = {"raw": presence_raw}
+        _presence_cache["ts"] = now
+        _presence_cache["data"] = presence_parsed
+        return presence_parsed
+    except Exception:
+        return _presence_cache.get("data") or {"error": "presence_unavailable"}
+
+# --- Vision settings API ---
+@app.get("/api/vision/settings")
+async def get_vision_settings(request: Request):
+    username = get_current_user(request)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return {
+        "success": True,
+        "settings": {
+            "presence_enabled": VISION_PRESENCE_ENABLED,
+            "allowed_ids": VISION_ALLOWED_IDS,
+            "default_camera_id": os.getenv("VISION_CAMERA_ID", "0"),
+        }
+    }
+
+@app.post("/api/vision/settings")
+async def update_vision_settings(request: Request):
+    username = get_current_user(request)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    global VISION_PRESENCE_ENABLED, VISION_ALLOWED_IDS
+    # enabled
+    if "presence_enabled" in data:
+        VISION_PRESENCE_ENABLED = bool(data.get("presence_enabled"))
+    # allowed_ids can be list or csv string
+    if "allowed_ids" in data:
+        aid = data.get("allowed_ids")
+        if isinstance(aid, str):
+            VISION_ALLOWED_IDS = [s.strip() for s in aid.split(",") if s.strip()]
+        elif isinstance(aid, list):
+            VISION_ALLOWED_IDS = [str(s).strip() for s in aid if str(s).strip()]
+    # default camera id
+    if "default_camera_id" in data:
+        os.environ["VISION_CAMERA_ID"] = str(data.get("default_camera_id"))
+    # reset presence cache
+    _presence_cache["ts"] = None
+    _presence_cache["data"] = None
+    return {"success": True, "message": "Vision settings updated", "settings": {
+        "presence_enabled": VISION_PRESENCE_ENABLED,
+        "allowed_ids": VISION_ALLOWED_IDS,
+        "default_camera_id": os.getenv("VISION_CAMERA_ID", "0"),
+    }}
+
+# --- Vision settings page ---
+@app.get("/vision", response_class=HTMLResponse)
+async def vision_page(request: Request):
+    username = get_current_user(request)
+    if not username:
+        return RedirectResponse(url="/", status_code=302)
+    return templates.TemplateResponse("vision.html", {"request": request, "username": username})
 
 async def _consume_smarthouse_sse(base_url: str):
     import httpx
@@ -177,6 +272,32 @@ System Status:\n- No authenticated user\n- Basic system analysis mode\n- Guardia
         recent_changes = get_recent_file_changes()
         system_health = ai_client.system.diagnose_system_health()
         vision_status = vision_tools.get_camera_status("default")
+        # Presence estimation (THROTTLED) from camera (prefer source 1), SMART method
+        try:
+            # Throttle presence checks and prefer non-Continuity cameras by default
+            cam_env = os.getenv("VISION_CAMERA_ID", "0")
+            # basic throttle: only once per 120s
+            THROTTLE_KEY = "presence_last_ts"
+            now_ts = datetime.now().timestamp()
+            last_ts = getattr(globals(), THROTTLE_KEY, 0)
+            if now_ts - last_ts >= float(os.getenv("VISION_PRESENCE_THROTTLE_S", "120")):
+                globals()[THROTTLE_KEY] = now_ts
+                presence_smart_raw = vision_tools.estimate_presence_smart(cam_env)
+            else:
+                presence_smart_raw = json.dumps({
+                    "presence": "cached",
+                    "note": "throttled",
+                })
+            try:
+                if isinstance(presence_smart_raw, str) and "Presence:" in presence_smart_raw:
+                    json_part = presence_smart_raw.split("Presence:", 1)[1].strip()
+                    presence_parsed = json.loads(json_part)
+                else:
+                    presence_parsed = _get_presence_snapshot()
+            except Exception:
+                presence_parsed = _get_presence_snapshot()
+        except Exception:
+            presence_parsed = _get_presence_snapshot()
 
         additional_prompt = """
 Ты — системный наблюдатель-диспетчер дома. Всегда действуй по циклу:
@@ -201,7 +322,20 @@ JSON:
 }
 """
 
-        analysis_message = f"""Analyze the system and take autonomous actions based on this context:\n\nUser Context: {context}\nRecent Changes: {recent_changes[:500]}\nSystem Health: {system_health[:500]}\nVision Status: {vision_status[:500]}\nSmartHouse Snapshot (truncated): {json.dumps(smarthouse_state)[:800]}\nRecent House Events: {json.dumps(recent_events)[:800]}"""
+        # Use placeholder tags to avoid f-string formatting issues inside braces
+        analysis_message = (
+            "You are Guardian's system analyst. Produce a short, human-readable status first, then a compact JSON.\n\n"
+            f"User Context: {context}\n"
+            f"Recent Changes: {recent_changes[:500]}\n"
+            f"System Health: {system_health[:500]}\n"
+            f"Vision Status: {vision_status[:500]}\n"
+            f"Presence Snapshot: {json.dumps(presence_parsed)[:400]}\n"
+            f"SmartHouse Snapshot (truncated): {json.dumps(smarthouse_state)[:800]}\n"
+            f"Recent House Events: {json.dumps(recent_events)[:800]}\n\n"
+            "Output format:\n"
+            "1) STATUS: one paragraph in natural language (<=80 words), mention user, presence (home/away/unknown), and any actions planned.\n"
+            "2) JSON: {{ 'system_status': '...', 'insights': [...], 'presence': {{...}}, 'recommended_actions': [...], 'tool_plan': [...], 'next_checks': [...] }}"
+        )
 
         analysis_response = ai_client.chat(
             message=analysis_message,
@@ -216,12 +350,15 @@ JSON:
             json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', analysis_response, re.DOTALL)
             if json_match:
                 json_str = json_match.group()
-                json_str = re.sub(r'[^\x20-\x7E]', '', json_str)
+                # Удаляем только управляющие символы, НЕ срезая Unicode (кириллицу)
+                json_str = re.sub(r'[\x00-\x1F\x7F]', '', json_str)
                 analysis_data = json.loads(json_str)
             else:
-                analysis_data = {"system_status": analysis_response}
+                # Fallback: показываем только нормализованный текст, без сырого кода и полей raw
+                status_text = "System analysis updated."
+                analysis_data = {"system_status": status_text, "presence": presence_parsed}
         except Exception:
-            analysis_data = {"system_status": analysis_response}
+            analysis_data = {"system_status": "System analysis updated.", "presence": presence_parsed}
 
         # Сохраняем без параметров, чтобы клиенты без username тоже видели кэш
         system_cache.set("system_analysis", analysis_data, params=None, ttl_seconds=600)
@@ -246,13 +383,16 @@ async def _startup_autonomous():
             _sse_task = asyncio.create_task(_consume_smarthouse_sse(SMARTHOUSE_BASE), name="smarthouse_sse")
         # Start background system analysis loop
         async def _loop():
-            user = None
+            # prefer last authenticated user if available
+            user = globals().get("CURRENT_USER")
             while True:
                 try:
+                    # refresh chosen user if changed
+                    user = globals().get("CURRENT_USER") or user
                     await _compute_system_analysis(user)
                 except Exception as e:
                     logger.warning(f"Background analysis tick error: {e}")
-                await asyncio.sleep(120)  # каждые 2 минуты
+                await asyncio.sleep(30)  # чаще обновляем
         global _analysis_task
         if _analysis_task is None:
             _analysis_task = asyncio.create_task(_loop(), name="system_analysis_loop")
@@ -454,6 +594,10 @@ def get_current_user(request: Request) -> Optional[str]:
     # Try session first
     username = verify_session(request)
     if username:
+        try:
+            globals()["CURRENT_USER"] = username
+        except Exception:
+            pass
         return username
     
     # Fallback to query params for backward compatibility
@@ -471,6 +615,10 @@ def get_current_user(request: Request) -> Optional[str]:
                         user, pwd = pair.strip().split(':', 1)
                         valid_credentials[user] = pwd
                 if username in valid_credentials and password == valid_credentials[username]:
+                    try:
+                        globals()["CURRENT_USER"] = username
+                    except Exception:
+                        pass
                     return username
             except Exception as e:
                 logger.error(f"Error parsing credentials: {e}")
@@ -519,6 +667,10 @@ async def login(
     
     if username in valid_credentials and password == valid_credentials[username]:
         logger.info(f"Login successful for user: {username}")
+        try:
+            globals()["CURRENT_USER"] = username
+        except Exception:
+            pass
         session_id = create_session(username)
         response = RedirectResponse(url="/chat", status_code=302)
         response.set_cookie(
@@ -529,6 +681,11 @@ async def login(
             samesite="lax",
             max_age=86400  # 24 hours
         )
+        # Kick immediate analysis for this user (non-blocking)
+        try:
+            asyncio.create_task(_compute_system_analysis(username))
+        except Exception:
+            pass
         return response
     else:
         logger.info(f"Login failed for user: {username}")
@@ -549,6 +706,10 @@ async def chat_page(request: Request):
     # If user came via URL with credentials, create session
     if not verify_session(request) and request.query_params.get("username"):
         session_id = create_session(username)
+        try:
+            globals()["CURRENT_USER"] = username
+        except Exception:
+            pass
         response = templates.TemplateResponse("chat.html", {
             "request": request, 
             "username": username,
@@ -586,62 +747,104 @@ async def chat_stream_endpoint(
         # Note: Can't set cookie in streaming response, but session is created
     
     async def generate_stream():
+        """Agentic streaming with iterative tool execution until convergence.
+        - Streams each LLM step as one chunk
+        - Executes detected tool calls sequentially and streams results
+        - Feeds tool results back and continues until no more tool calls or step budget
+        """
         try:
-            # Get user profile
+            # Profile/context
             user_profile = UserProfile(username)
             user_profile_dict = user_profile.get_profile()
-            user_profile_dict['username'] = username  # Add username to profile
-            
-            # Get conversation context
+            user_profile_dict['username'] = username
+
             recent_messages = conversation_history.get_recent_history(limit=666)
-            
-            # Build full context
-            full_context = ""
+            base_context = ""
             if recent_messages:
-                full_context += "Recent conversation:\n"
+                base_context += "Recent conversation:\n"
                 for msg in recent_messages:
-                    full_context += f"- User: {msg.get('message', '')}\n"
-                    full_context += f"- AI: {msg.get('ai_response', '')}\n"
-            
-            # Add system context (recent file changes)
+                    base_context += f"- User: {msg.get('message', '')}\n"
+                    base_context += f"- AI: {msg.get('ai_response', '')}\n"
             recent_changes = get_recent_file_changes()
             if recent_changes:
-                full_context += f"\n**SYSTEM CONTEXT:**\n{recent_changes}\n"
-            
-            # Track the complete response
+                base_context += f"\n**SYSTEM CONTEXT:**\n{recent_changes}\n"
+
+            # Settings
+            import os as _os
+            max_steps = int(_os.getenv("AGENT_MAX_STEPS", "20"))
+            tools_per_step = int(_os.getenv("AGENT_TOOLS_PER_STEP", "5"))
+
+            # Accumulators
             full_response = ""
-            
-            # Получаем поток от модели
-            model_stream = ai_client.generate_streaming_response(
-                user_message=message,
-                context=full_context,
-                user_profile=user_profile_dict
-            )
-            
-            # Обрабатываем поток через ResponseProcessor
-            async for chunk in response_processor.process_streaming_response(model_stream):
-                if chunk:
-                    full_response += chunk
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
-            
-            logger.info(f"🔧 STREAMING CHAT: Response processing completed")
-            
-            # Send final completion signal
+            tool_trace_lines: list[str] = []
+            step = 0
+            current_message = message
+
+            while step < max_steps:
+                step += 1
+                # Compose dynamic context with tool results so far
+                tool_context = ("\n**TOOL RESULTS SO FAR:**\n" + "\n".join(tool_trace_lines) + "\n") if tool_trace_lines else ""
+                dynamic_context = base_context + tool_context
+
+                # Single-step generation with streaming chunks
+                step_text = ""
+                model_stream = ai_client.generate_streaming_response(
+                    user_message=current_message,
+                    context=dynamic_context,
+                    user_profile=user_profile_dict
+                )
+                async for step_chunk in model_stream:
+                    if step_chunk:
+                        step_text += step_chunk
+                        full_response += step_chunk
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': step_chunk})}\n\n"
+
+                # Extract and execute tool calls found in this step
+                tool_calls = response_processor.tool_extractor.extract_tool_calls(step_text or "")
+                if not tool_calls:
+                    break
+
+                executed = 0
+                for tool_call in tool_calls:
+                    if executed >= tools_per_step:
+                        break
+                    try:
+                        result = response_processor.tool_executor.execute_tool_call(tool_call, context={'user_profile': user_profile_dict})
+                    except Exception as exec_err:
+                        result = {"success": False, "error": str(exec_err)}
+
+                    if result.get('success'):
+                        out = f"✅ {result.get('result', '')}"
+                    else:
+                        out = f"❌ Error: {result.get('error', '')}"
+                    # Stream tool result
+                    full_response += "\n" + out
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': out})}\n\n"
+
+                    # Add to trace for the next iteration (short line)
+                    fn = getattr(tool_call, 'function_name', 'tool')
+                    summary = out
+                    if len(summary) > 240:
+                        summary = summary[:240] + "…"
+                    tool_trace_lines.append(f"- {fn}: {summary}")
+                    executed += 1
+
+                # Ask the model to continue planning/actions using the latest tool results
+                current_message = "CONTINUE. Integrate the TOOL RESULTS SO FAR and proceed. If task is solved, provide the final concise answer."
+
+            # Completed loop
             yield f"data: {json.dumps({'type': 'message_complete'})}\n\n"
-            
-            # Add to conversation history
+
+            # Persist
             conversation_history.add_message(username, message, full_response)
-            
-            # Clear conversation history cache to force refresh
             cache_key = f"conversation_history_{username}_20"
             system_cache.delete(cache_key)
             cache_key_5 = f"conversation_history_{username}_5"
             system_cache.delete(cache_key_5)
             logger.info(f"🗑️ CONVERSATION CACHE: Cleared cache for {username} after new message")
-            
-            # Send final completion signal
+
             yield f"data: {json.dumps({'type': 'complete', 'timestamp': datetime.now().isoformat()})}\n\n"
-            
+
         except Exception as e:
             logger.error(f"Error in streaming chat: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
@@ -729,6 +932,124 @@ async def chat_endpoint(
             "success": False,
             "error": str(e)
         }, status_code=500)
+
+# ========= System Task API (background agent with tools) =========
+
+async def _run_system_task(task_id: str, description: str, username: Optional[str]) -> None:
+    """Run an agentic background task with iterative tool use until completion or limits."""
+    try:
+        import os as _os
+        max_steps = int(_os.getenv("SYSTEM_TASK_MAX_STEPS", "50"))
+        tools_per_step = int(_os.getenv("SYSTEM_TASK_TOOLS_PER_STEP", "10"))
+
+        # Prepare user context
+        user_profile_dict: Dict[str, Any] = {}
+        if username:
+            try:
+                user_profile = UserProfile(username)
+                user_profile_dict = user_profile.get_profile()
+                user_profile_dict['username'] = username
+            except Exception:
+                user_profile_dict = {"username": username}
+
+        recent_messages = conversation_history.get_recent_history(limit=40)
+        base_context = ""
+        if recent_messages:
+            base_context += "Recent conversation:\n"
+            for msg in recent_messages:
+                base_context += f"- User: {msg.get('message', '')}\n"
+                base_context += f"- AI: {msg.get('ai_response', '')}\n"
+        try:
+            recent_changes = get_recent_file_changes()
+            if recent_changes:
+                base_context += f"\n**SYSTEM CONTEXT:**\n{recent_changes}\n"
+        except Exception:
+            pass
+
+        # Init task record
+        system_tasks[task_id].update({
+            "status": "running",
+            "steps": [],
+            "started_at": datetime.now().isoformat()
+        })
+
+        current_message = f"TASK: {description}. Think step-by-step and use tools when needed."
+        step = 0
+        while step < max_steps:
+            step += 1
+            trace = system_tasks.get(task_id, {})
+            tool_lines = trace.get("tool_lines", [])
+            tool_context = ("\n**TOOL RESULTS SO FAR:**\n" + "\n".join(tool_lines) + "\n") if tool_lines else ""
+            dynamic_context = base_context + tool_context
+
+            # Generate one step
+            ai_text = ai_client.chat(
+                message=current_message,
+                user_profile=user_profile_dict,
+                conversation_context=dynamic_context
+            )
+
+            step_rec = {"step": step, "text": ai_text}
+            system_tasks[task_id]["steps"].append(step_rec)
+            system_tasks[task_id]["last_update"] = datetime.now().isoformat()
+
+            # Extract and execute tools
+            tool_calls = response_processor.tool_extractor.extract_tool_calls(ai_text or "")
+            if not tool_calls:
+                # Heuristic: stop if model declares done
+                if ai_text and ("DONE" in ai_text or "Готово" in ai_text or "Завершено" in ai_text):
+                    break
+                # Otherwise continue planning briefly
+                current_message = "CONTINUE. If task is solved, output final summary and mark DONE."
+                continue
+
+            executed = 0
+            for tool_call in tool_calls:
+                if executed >= tools_per_step:
+                    break
+                try:
+                    result = response_processor.tool_executor.execute_tool_call(tool_call, context={"user_profile": user_profile_dict})
+                except Exception as exec_err:
+                    result = {"success": False, "error": str(exec_err)}
+
+                if result.get("success"):
+                    out = f"✅ {result.get('result', '')}"
+                else:
+                    out = f"❌ Error: {result.get('error', '')}"
+                tool_lines.append(f"- {getattr(tool_call, 'function_name', 'tool')}: {out[:240]}")
+                system_tasks[task_id]["steps"].append({"tool": getattr(tool_call, 'function_name', 'tool'), "result": out})
+                system_tasks[task_id]["last_update"] = datetime.now().isoformat()
+                executed += 1
+
+            current_message = "CONTINUE. Integrate the TOOL RESULTS SO FAR and proceed. When finished, output DONE and the final concise answer."
+
+        system_tasks[task_id]["status"] = "done"
+        system_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+    except Exception as e:
+        system_tasks[task_id]["status"] = "error"
+        system_tasks[task_id]["error"] = str(e)
+        system_tasks[task_id]["last_update"] = datetime.now().isoformat()
+
+
+@app.post("/api/system-task/submit")
+async def submit_system_task(request: Request, description: str = Form(...)):
+    """Submit a background system task; returns task_id."""
+    try:
+        username = get_current_user(request)
+        task_id = str(uuid.uuid4())
+        system_tasks[task_id] = {"id": task_id, "description": description, "status": "queued"}
+        asyncio.create_task(_run_system_task(task_id, description, username))
+        return JSONResponse({"success": True, "task_id": task_id})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/system-task/{task_id}")
+async def get_system_task(task_id: str):
+    rec = system_tasks.get(task_id)
+    if not rec:
+        return JSONResponse({"success": False, "error": "task not found"}, status_code=404)
+    return JSONResponse({"success": True, "task": rec})
 
 @app.get("/api/profile")
 async def get_profile(request: Request):
@@ -1458,7 +1779,29 @@ async def get_system_analysis(request: Request):
         
         if cached_result:
             logger.info("✅ SYSTEM ANALYSIS: Returning cached result")
-            return JSONResponse(content=cached_result)
+            # Always return unified shape: { success, analysis: { llm_analysis, live_analysis }, timestamp }
+            try:
+                from ai_client.autonomous import SystemAnalysisAgent  # local import to avoid top-cycle
+                live = globals().get("system_agent").get_last() if globals().get("system_agent") else None
+            except Exception:
+                live = None
+            # If cached_result already looks merged, keep it; else wrap into llm_analysis
+            if isinstance(cached_result, dict) and "llm_analysis" in cached_result and "live_analysis" in cached_result:
+                merged = cached_result
+            else:
+                merged = {"llm_analysis": cached_result, "live_analysis": live or {}}
+            # Enrich live_analysis with quick presence snapshot and current user if available
+            try:
+                merged.setdefault("live_analysis", {})["presence"] = _get_presence_snapshot()
+            except Exception:
+                pass
+            try:
+                user_hint = username or globals().get("CURRENT_USER")
+                if user_hint:
+                    merged.setdefault("live_analysis", {})["user"] = user_hint
+            except Exception:
+                pass
+            return JSONResponse({"success": True, "analysis": merged, "timestamp": datetime.now().isoformat()})
         
         # Если кэша нет, запускаем фоновую задачу и возвращаем заглушку
         logger.info("🔧 SYSTEM ANALYSIS: No cached result – kicking background analysis and returning placeholder")
