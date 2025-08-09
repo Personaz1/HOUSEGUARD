@@ -430,6 +430,65 @@ class VisionTools:
             self.logger.error(error_msg)
             return error_msg
 
+    def estimate_presence(self, camera_id: str = "default") -> str:
+        """
+        Оценка присутствия человека по одному кадру с камеры.
+        Использует Haar-cascade для детекции лиц (офлайн), при доступности может дополнительно
+        опираться на Google Vision (через analyze_image сохранённого кадра).
+
+        Returns: краткая строка с JSON: {"presence": bool, "faces": int, "confidence": float, "timestamp": ...}
+        """
+        try:
+            # Определяем источник камеры
+            if camera_id == "default" or camera_id == "webcam":
+                source = 0
+            else:
+                source = camera_id if not str(camera_id).isdigit() else int(camera_id)
+
+            cap = cv2.VideoCapture(source)
+            if not cap.isOpened():
+                return f"❌ Ошибка: Не удалось открыть камеру {camera_id}"
+
+            ret, frame = cap.read()
+            cap.release()
+            if not ret or frame is None:
+                return f"❌ Ошибка: Не удалось получить кадр с камеры {camera_id}"
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # Загружаем каскад лиц
+            try:
+                import cv2.data as cv2data
+                cascade_path = os.path.join(getattr(cv2data, 'haarcascades', ''), 'haarcascade_frontalface_default.xml')
+                if not cascade_path or not os.path.exists(cascade_path):
+                    # fallback: поиск рядом с установленным OpenCV
+                    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            except Exception:
+                cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+
+            face_cascade = cv2.CascadeClassifier(cascade_path)
+            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+            faces_count = 0 if faces is None else len(faces)
+
+            presence = faces_count > 0
+            # Простейшая уверенность: 0.8 если видим >=1 лицо, иначе 0.3
+            confidence = 0.8 if presence else 0.3
+
+            result = {
+                "presence": presence,
+                "faces": int(faces_count),
+                "confidence": float(confidence),
+                "timestamp": datetime.now().isoformat(),
+                "camera_id": str(camera_id)
+            }
+
+            self.logger.info(f"👥 Vision Tools: Presence={presence} faces={faces_count}")
+            return "✅ Presence: " + json.dumps(result, ensure_ascii=False)
+
+        except Exception as e:
+            error_msg = f"❌ Ошибка при оценке присутствия: {e}"
+            self.logger.error(error_msg)
+            return error_msg
+
     # ===== Cloud Vision Adapters (официальный SDK) =====
     def vision_labels(self, image_path: str, max_results: int = 10) -> str:
         try:

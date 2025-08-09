@@ -6,8 +6,11 @@ import os
 import re
 import json
 import subprocess
+import threading
+import time
+import glob as _glob
 import requests
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
 from ..utils.config import Config
@@ -24,6 +27,10 @@ class SystemTools:
         self.config = Config()
         self.error_handler = ErrorHandler()
         self.project_root = self.config.get_project_root()
+        # Простые сессии шелла (Manus-style API)
+        self._shell_sessions: Dict[str, subprocess.Popen] = {}
+        self._shell_buffers: Dict[str, List[str]] = {}
+        self._shell_locks: Dict[str, threading.Lock] = {}
     
     # ===== FILE OPERATIONS =====
     
@@ -49,6 +56,21 @@ class SystemTools:
             return f"✅ File written: {path}"
         except Exception as e:
             return f"❌ Error writing file {path}: {str(e)}"
+
+    # Manus-style: расширенная запись файла с флагами
+    def file_write(self, file: str, content: str, append: bool = False, leading_newline: bool = False, trailing_newline: bool = False) -> str:
+        try:
+            os.makedirs(os.path.dirname(file) or '.', exist_ok=True)
+            mode = 'a' if append else 'w'
+            with open(file, mode, encoding='utf-8') as f:
+                if leading_newline and append:
+                    f.write('\n')
+                f.write(content)
+                if trailing_newline:
+                    f.write('\n')
+            return f"✅ file_write: {file} ({'append' if append else 'overwrite'})"
+        except Exception as e:
+            return f"❌ file_write error: {e}"
     
     def edit_file(self, path: str, content: str) -> str:
         """Редактирование файла"""
@@ -61,6 +83,21 @@ class SystemTools:
             return f"✅ File edited: {path}"
         except Exception as e:
             return f"❌ Error editing file {path}: {str(e)}"
+
+    # Manus-style: замена строки по совпадению
+    def file_str_replace(self, file: str, old_str: str, new_str: str) -> str:
+        try:
+            if not os.path.exists(file):
+                return f"❌ File not found: {file}"
+            with open(file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            count = content.count(old_str)
+            content = content.replace(old_str, new_str)
+            with open(file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return f"✅ file_str_replace: {count} replacements in {file}"
+        except Exception as e:
+            return f"❌ file_str_replace error: {e}"
     
     def create_file(self, path: str, content: str) -> str:
         """Создание файла"""
@@ -104,6 +141,17 @@ class SystemTools:
             return f"Files in {directory}:\n" + "\n".join(files)
         except Exception as e:
             return f"❌ Error listing files in {directory}: {str(e)}"
+
+    # Manus-style: поиск файлов по имени
+    def file_find_by_name(self, path: str, glob: str) -> str:
+        try:
+            base = path or '.'
+            pattern = os.path.join(base, glob)
+            matches = _glob.glob(pattern, recursive=True)
+            rel = [os.path.relpath(p, self.project_root) for p in matches]
+            return json.dumps({"count": len(rel), "files": rel[:200]}, ensure_ascii=False)
+        except Exception as e:
+            return f"❌ file_find_by_name error: {e}"
     
     def search_files(self, query: str) -> str:
         """Поиск файлов по содержимому"""
@@ -127,6 +175,23 @@ class SystemTools:
                 return f"No files found containing '{query}'"
         except Exception as e:
             return f"❌ Error searching files: {str(e)}"
+
+    # Manus-style: поиск по контенту в одном файле по regex
+    def file_find_in_content(self, file: str, regex: str) -> str:
+        try:
+            if not os.path.exists(file):
+                return f"❌ File not found: {file}"
+            pattern = re.compile(regex)
+            hits: List[Tuple[int, str]] = []
+            with open(file, 'r', encoding='utf-8') as f:
+                for i, line in enumerate(f, start=1):
+                    if pattern.search(line):
+                        hits.append((i, line.rstrip()))
+                        if len(hits) >= 200:
+                            break
+            return json.dumps({"file": file, "matches": len(hits), "samples": hits[:50]}, ensure_ascii=False)
+        except Exception as e:
+            return f"❌ file_find_in_content error: {e}"
     
     def append_to_file(self, path: str, content: str) -> str:
         """Добавление в файл"""
@@ -218,6 +283,35 @@ class SystemTools:
         except Exception as e:
             logger.error(f"Error reading system logs: {e}")
             return f"❌ Error reading logs: {str(e)}"
+
+    # ===== Messaging (Manus-style notify/ask) =====
+    def message_notify_user(self, text: str, attachments: Optional[List[str]] = None) -> str:
+        try:
+            log_path = os.path.join(self.project_root, 'guardian_sandbox', 'system_activity_log.txt')
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            stamp = datetime.now().isoformat()
+            entry = f"[{stamp}] NOTIFY: {text}"
+            if attachments:
+                entry += f"\nAttachments: {attachments}"
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(entry + "\n")
+            return f"✅ notify logged"
+        except Exception as e:
+            return f"❌ notify error: {e}"
+
+    def message_ask_user(self, text: str, attachments: Optional[List[str]] = None, suggest_user_takeover: str = "none") -> str:
+        try:
+            log_path = os.path.join(self.project_root, 'guardian_sandbox', 'system_activity_log.txt')
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            stamp = datetime.now().isoformat()
+            entry = f"[{stamp}] ASK: {text} | takeover={suggest_user_takeover}"
+            if attachments:
+                entry += f"\nAttachments: {attachments}"
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(entry + "\n")
+            return f"✅ ask recorded"
+        except Exception as e:
+            return f"❌ ask error: {e}"
     
     def get_error_summary(self) -> str:
         """Получение сводки ошибок"""
@@ -793,6 +887,84 @@ Be detailed and specific in your analysis."""
         except Exception as e:
             logger.error(f"Error running terminal command: {e}")
             return f"❌ Error running command: {str(e)}"
+
+    # ===== Shell sessions (Manus-style) =====
+    def shell_exec(self, id: str, exec_dir: str, command: str) -> str:
+        try:
+            if id in self._shell_sessions and self._shell_sessions[id].poll() is None:
+                return f"❌ shell_exec: session '{id}' already running"
+            os.makedirs(exec_dir or '.', exist_ok=True)
+            proc = subprocess.Popen(command, cwd=exec_dir, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            self._shell_sessions[id] = proc
+            self._shell_buffers[id] = []
+            self._shell_locks[id] = threading.Lock()
+
+            def _reader():
+                try:
+                    for line in proc.stdout:
+                        with self._shell_locks[id]:
+                            self._shell_buffers[id].append(line.rstrip())
+                        if len(self._shell_buffers[id]) > 5000:
+                            # truncate oldest
+                            self._shell_buffers[id] = self._shell_buffers[id][-3000:]
+                except Exception:
+                    pass
+            threading.Thread(target=_reader, daemon=True).start()
+            return f"✅ shell_exec: started session '{id}'"
+        except Exception as e:
+            return f"❌ shell_exec error: {e}"
+
+    def shell_view(self, id: str) -> str:
+        try:
+            if id not in self._shell_buffers:
+                return f"❌ shell_view: unknown session '{id}'"
+            with self._shell_locks.get(id, threading.Lock()):
+                lines = self._shell_buffers[id][-200:]
+            return "\n".join(lines)
+        except Exception as e:
+            return f"❌ shell_view error: {e}"
+
+    def shell_wait(self, id: str, seconds: int) -> str:
+        try:
+            if id not in self._shell_sessions:
+                return f"❌ shell_wait: unknown session '{id}'"
+            proc = self._shell_sessions[id]
+            try:
+                proc.wait(timeout=max(0, int(seconds)))
+                return f"✅ shell_wait: exit={proc.returncode}"
+            except subprocess.TimeoutExpired:
+                return "⏳ shell_wait: still running"
+        except Exception as e:
+            return f"❌ shell_wait error: {e}"
+
+    def shell_write_to_process(self, id: str, input: str, press_enter: bool = True) -> str:
+        try:
+            if id not in self._shell_sessions:
+                return f"❌ shell_write: unknown session '{id}'"
+            proc = self._shell_sessions[id]
+            if proc.stdin is None:
+                return f"❌ shell_write: no stdin for session '{id}'"
+            data = input + ("\n" if press_enter else "")
+            proc.stdin.write(data)
+            proc.stdin.flush()
+            return "✅ shell_write: sent"
+        except Exception as e:
+            return f"❌ shell_write error: {e}"
+
+    def shell_kill_process(self, id: str) -> str:
+        try:
+            if id not in self._shell_sessions:
+                return f"❌ shell_kill: unknown session '{id}'"
+            proc = self._shell_sessions[id]
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except Exception:
+                    proc.kill()
+            return "✅ shell_kill: terminated"
+        except Exception as e:
+            return f"❌ shell_kill error: {e}"
     
     def get_system_info(self) -> str:
         """Получение информации о системе"""

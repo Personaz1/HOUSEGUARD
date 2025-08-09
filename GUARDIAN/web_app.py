@@ -110,6 +110,7 @@ home_tools = HomeTools(base_url=SMARTHOUSE_BASE, role=os.getenv("SMARTHOUSE_ROLE
 # SmartHouse SSE events buffer
 _smarthouse_events: "deque[Dict[str, Any]]" = deque(maxlen=200)
 _sse_task: Optional[asyncio.Task] = None
+_analysis_task: Optional[asyncio.Task] = None
 
 async def _consume_smarthouse_sse(base_url: str):
     import httpx
@@ -148,6 +149,86 @@ async def _consume_smarthouse_sse(base_url: str):
             await asyncio.sleep(3)
 
 
+async def _compute_system_analysis(username: Optional[str]):
+    """Heavy LLM system analysis computation in background; stores result in cache."""
+    try:
+        # Build user context
+        if username:
+            user_profile = UserProfile(username)
+            profile_data = user_profile.get_profile()
+            recent_messages = conversation_history.get_recent_history(limit=666)
+            context = f"""
+User Profile:\n- Name: {profile_data.get('full_name', username)}\n- Bio: {profile_data.get('profile', 'N/A')}\n\nRecent Conversation ({len(recent_messages)} messages):\n{chr(10).join([f"- {msg.get('message', 'N/A')}" for msg in recent_messages]) if recent_messages else "No recent messages"}
+"""
+        else:
+            profile_data = {}
+            context = """
+System Status:\n- No authenticated user\n- Basic system analysis mode\n- Guardian AI is operational\n- All core functions available
+"""
+
+        # Snapshot SmartHouse and events
+        try:
+            smarthouse_state = home_tools.get_state()
+        except Exception:
+            smarthouse_state = {"error": "unavailable"}
+        recent_events = list(_smarthouse_events)[-20:]
+
+        # System health and vision status
+        recent_changes = get_recent_file_changes()
+        system_health = ai_client.system.diagnose_system_health()
+        vision_status = vision_tools.get_camera_status("default")
+
+        additional_prompt = """
+Ты — системный наблюдатель-диспетчер дома. Всегда действуй по циклу:
+PERCEIVE → THINK → TEST WITH TOOLS → INTEGRATE RESULTS → DECIDE → ACT → NEXT CHECKS.
+
+1) В разделе Tool Plan спланируй конкретные вызовы инструментов (VisionTools/HomeTools), минимум:
+   - VisionTools.get_camera_status("default")
+   - VisionTools.estimate_presence("default")
+   - При сомнениях: VisionTools.capture_image("default") и VisionTools.analyze_image(<последний снимок>)
+
+2) В разделе Tool Results кратко перепиши факты: presence, faces, события, время суток.
+
+3) Decisions & Actions: presence_status (home/away/unknown) с обоснованием, безопасные действия, Next Checks.
+
+JSON:
+{
+  "system_status": "строка",
+  "insights": ["факты"],
+  "presence": {"status": "home|away|unknown", "faces": int, "confidence": float},
+  "recommended_actions": ["..."],
+  "tool_plan": ["VisionTools.estimate_presence(\"default\")", "..."]
+}
+"""
+
+        analysis_message = f"""Analyze the system and take autonomous actions based on this context:\n\nUser Context: {context}\nRecent Changes: {recent_changes[:500]}\nSystem Health: {system_health[:500]}\nVision Status: {vision_status[:500]}\nSmartHouse Snapshot (truncated): {json.dumps(smarthouse_state)[:800]}\nRecent House Events: {json.dumps(recent_events)[:800]}"""
+
+        analysis_response = ai_client.chat(
+            message=analysis_message,
+            user_profile=profile_data,
+            conversation_context=context,
+            additional_prompt=additional_prompt,
+        )
+
+        # Parse JSON if possible
+        try:
+            import re
+            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', analysis_response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+                json_str = re.sub(r'[^\x20-\x7E]', '', json_str)
+                analysis_data = json.loads(json_str)
+            else:
+                analysis_data = {"system_status": analysis_response}
+        except Exception:
+            analysis_data = {"system_status": analysis_response}
+
+        system_cache.set("system_analysis", analysis_data, params=None, ttl_seconds=600)
+        logger.info("💾 SYSTEM ANALYSIS: Background result cached")
+    except Exception as e:
+        logger.error(f"❌ Background system analysis error: {e}")
+
+
 @app.on_event("startup")
 async def _startup_autonomous():
     try:
@@ -159,6 +240,18 @@ async def _startup_autonomous():
         global _sse_task
         if _sse_task is None:
             _sse_task = asyncio.create_task(_consume_smarthouse_sse(SMARTHOUSE_BASE), name="smarthouse_sse")
+        # Start background system analysis loop
+        async def _loop():
+            user = None
+            while True:
+                try:
+                    await _compute_system_analysis(user)
+                except Exception as e:
+                    logger.warning(f"Background analysis tick error: {e}")
+                await asyncio.sleep(120)  # каждые 2 минуты
+        global _analysis_task
+        if _analysis_task is None:
+            _analysis_task = asyncio.create_task(_loop(), name="system_analysis_loop")
     except Exception as e:
         logger.warning(f"Autonomous startup warning: {e}")
 
@@ -173,6 +266,11 @@ async def _shutdown_autonomous():
         if _sse_task is not None:
             _sse_task.cancel()
             _sse_task = None
+        # Stop analysis task
+        global _analysis_task
+        if _analysis_task is not None:
+            _analysis_task.cancel()
+            _analysis_task = None
     except Exception as e:
         logger.warning(f"Autonomous shutdown warning: {e}")
 # conversation_history = ConversationHistory() # This line is removed
@@ -1349,16 +1447,22 @@ async def get_system_analysis(request: Request):
         # Get current user if available, but don't require it
         username = get_current_user(request)
         
-        # Проверяем кэш (но с более коротким TTL для тестирования)
+        # Быстрый ответ из кэша (бэкграунд его поддерживает актуальным)
         cache_params = {"username": username, "has_user": bool(username)}
-        cached_result = system_cache.get("system_analysis", cache_params, ttl_seconds=60)  # 1 минута для тестирования
+        cached_result = system_cache.get("system_analysis", cache_params, ttl_seconds=600)
         
         if cached_result:
             logger.info("✅ SYSTEM ANALYSIS: Returning cached result")
             return JSONResponse(content=cached_result)
         
-        # Если кэша нет, начинаем анализ
-        logger.info("🔧 SYSTEM ANALYSIS: Starting fresh analysis...")
+        # Если кэша нет, запускаем фоновую задачу и возвращаем заглушку
+        logger.info("🔧 SYSTEM ANALYSIS: No cached result – kicking background analysis and returning placeholder")
+        try:
+            asyncio.create_task(_compute_system_analysis(username))
+        except Exception:
+            pass
+        placeholder = {"success": True, "analysis": {"llm_analysis": {"system_status": "Analyzing... (background)", "timestamp": datetime.now().isoformat()}, "live_analysis": {}}, "timestamp": datetime.now().isoformat()}
+        return JSONResponse(content=placeholder)
         
         if username:
             # If user is authenticated, get their profile and context
@@ -1413,30 +1517,33 @@ System Status:
         system_health = ai_client.system.diagnose_system_health()
         vision_status = vision_tools.get_camera_status("default")
         
-        # Generate system analysis using AI с дополнительным промптом
-        additional_prompt = """Это мини модуль системного анализатора - как общее положение из контекста датчиков (если подключены) и памяти?
+        # Generate system analysis using AI — с обязательным циклом инструментов
+        additional_prompt = """
+Ты — системный наблюдатель-диспетчер дома. Всегда действуй по циклу:
+PERCEIVE → THINK → TEST WITH TOOLS → INTEGRATE RESULTS → DECIDE → ACT → NEXT CHECKS.
 
-**YOUR MISSION:**
-1. **ANALYZE** the conversation history and user context
-2. **IDENTIFY** important events, patterns, and insights
-3. **TAKE ACTION** - create notes, update profiles
-4. **RESPOND** with your analysis and actions taken
+1) В разделе Tool Plan спланируй конкретные вызовы инструментов (VisionTools/HomeTools), минимум:
+   - VisionTools.get_camera_status("default")
+   - VisionTools.estimate_presence("default")
+   - При сомнениях: VisionTools.capture_image("default") и VisionTools.analyze_image(<последний снимок>)
 
-**LOOK FOR:**
-- System issues or improvements needed
-- User preferences and needs
+2) Выполни план (исполняющая среда выполнит вызовы). В разделе Tool Results кратко перепиши факты:
+   presence: true/false, faces, события, время суток.
 
-**ACT AUTONOMOUSLY** - don't just analyze, CREATE and UPDATE based on what you discover.
+3) В разделе Decisions & Actions:
+   - Дай presence_status: home/away/unknown и основание.
+   - Предложи безопасные действия (≤30% свет, уведомления).
+   - Опиши Next Checks: когда перепроверить и чем.
 
-Provide your response in this JSON format:
-{{
-  "system_status": "Your analysis of current state",
-  "actions_taken": ["List of actions you performed"],
-  "insights": ["Key insights discovered"],
-  "recommendations": ["Suggestions for users"],
-
-  "notes_added": ["System notes you created"]
-}}"""
+JSON-формат ответа:
+{
+  "system_status": "строка",
+  "insights": ["факты"],
+  "presence": {"status": "home|away|unknown", "faces": int, "confidence": float},
+  "recommended_actions": ["..."],
+  "tool_plan": ["VisionTools.estimate_presence(\"default\")", "..."]
+}
+"""
 
         # Log system analysis start
         logger.info("🔧 SYSTEM ANALYSIS: Starting autonomous analysis...")
@@ -1513,13 +1620,12 @@ Recent House Events: {json.dumps(recent_events)[:800]}"""
                 "capabilities": "System is operational"
             }
         
-        # Сохраняем в кэш только если нет ошибок
+        # Сохраняем в кэш только если нет ошибок (для совместимости пути sync)
         if "❌ Error: 429" not in analysis_response and "❌ Error:" not in analysis_response:
             system_cache.set("system_analysis", analysis_data, cache_params, ttl_seconds=600)
             logger.info("💾 SYSTEM ANALYSIS: Result cached for 10 minutes")
         else:
             logger.warning("⚠️ SYSTEM ANALYSIS: Not caching error response")
-            # Инвалидируем кэш при ошибках
             system_cache.invalidate("system_analysis", cache_params)
         
         # Merge on-demand LLM analysis with live background snapshot
@@ -2007,6 +2113,17 @@ async def list_cameras(request: Request):
         return {"success": True, "result": result}
     except Exception as e:
         logger.error(f"Error listing cameras: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/vision/presence/{camera_id}")
+async def presence_estimation(request: Request, camera_id: str):
+    """Estimate human presence from a single frame"""
+    try:
+        from ai_client.tools.vision_tools import vision_tools
+        result = vision_tools.estimate_presence(camera_id)
+        return {"success": True, "result": result}
+    except Exception as e:
+        logger.error(f"Error estimating presence: {e}")
         return {"success": False, "error": str(e)}
 
 @app.get("/api/vision/camera/{camera_id}/status")
