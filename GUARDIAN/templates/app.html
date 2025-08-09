@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Guardian — App</title>
+  <link rel="stylesheet" href="/static/css/guardian.css" />
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background:#0b0f15; color:#e5e7eb; }
+    .shell { display:flex; height:100vh; }
+    .nav { width:72px; background:#0f1720; border-right:1px solid rgba(255,255,255,.06); display:flex; flex-direction:column; align-items:center; padding:10px 6px; gap:8px }
+    .nav .item { width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:#94a3b8; cursor:pointer; transition:.15s }
+    .nav .item.active, .nav .item:hover { background:#121a24; color:#f8fafc }
+    .main { flex:1; display:flex; }
+    .sidebar { width:320px; border-right:1px solid rgba(255,255,255,.06); background:#0d131b; display:flex; flex-direction:column }
+    .content { flex:1; display:flex; flex-direction:column }
+    .topbar { height:52px; border-bottom:1px solid rgba(255,255,255,.06); display:flex; align-items:center; justify-content:space-between; padding:0 12px; background:#0d131b }
+    .pill { padding:6px 10px; border-radius:999px; background:#101826; color:#9fb2ca; font-size:12px }
+    .chat { flex:1; overflow:auto; padding:16px }
+    .bubble { border:1px solid rgba(255,255,255,.08); background:#0c1520; border-radius:14px; padding:12px 14px; margin:10px 0; max-width:900px }
+    .bubble.user { background:#101926; border-color:rgba(120,190,255,.18) }
+    .composer { border-top:1px solid rgba(255,255,255,.06); padding:10px; display:flex; gap:8px }
+    .composer textarea { flex:1; resize:none; min-height:52px; max-height:180px; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.1); background:#0b1119; color:#e5e7eb }
+    .composer button { background:#1e293b; color:#e5e7eb; border:1px solid rgba(255,255,255,.12); padding:10px 14px; border-radius:12px; cursor:pointer }
+    .muted { color:#93a4b9; font-size:12px }
+  </style>
+</head>
+<body>
+  <div class="shell" id="app">
+    <div class="nav">
+      <div class="item active" title="Chat">💬</div>
+      <div class="item" title="Tasks">🗂️</div>
+      <div class="item" title="Vision">📷</div>
+      <div class="item" title="Audio">🎙️</div>
+      <div class="item" title="Home">🏠</div>
+      <div class="item" title="Settings">⚙️</div>
+    </div>
+    <div class="main">
+      <div class="sidebar">
+        <div class="topbar"><span class="pill">ΔΣ Guardian</span><span class="muted" id="presence">presence: —</span></div>
+        <div style="padding:12px; font-size:12px; color:#9fb2ca">System Feed</div>
+        <div id="feed" style="flex:1; overflow:auto; padding:8px 12px"></div>
+      </div>
+      <div class="content">
+        <div class="topbar"><span class="pill">Chat</span><span class="muted" id="model">model: —</span></div>
+        <div class="chat" id="chat"></div>
+        <div class="composer">
+          <textarea id="input" placeholder="Type a message…"></textarea>
+          <button id="send">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const chatEl = document.getElementById('chat');
+    const feedEl = document.getElementById('feed');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+
+    let activeStreamId = null;
+
+    function addBubble(role, html) {
+      const div = document.createElement('div');
+      div.className = 'bubble ' + role;
+      div.innerHTML = html;
+      chatEl.appendChild(div);
+      chatEl.scrollTop = chatEl.scrollHeight;
+      return div;
+    }
+
+    function appendToBubble(div, text) {
+      div.innerHTML += text;
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    async function getPresence() {
+      try {
+        const r = await fetch('/api/vision/settings', {credentials:'include'});
+        if (!r.ok) return;
+        const j = await r.json();
+        document.getElementById('presence').textContent = 'presence: ' + (j?.settings?.presence_enabled ? 'on' : 'off');
+      } catch {}
+    }
+
+    function subscribeFeed() {
+      // SmartHouse aggregated feed (server pulls from /ui/stream behind the scenes)
+      // Here we render last events snapshot via polling for simplicity (SSE wiring can be added later)
+      setInterval(async ()=>{
+        try {
+          const r = await fetch('/api/system-analysis', {credentials:'include'});
+          if (!r.ok) return;
+          const j = await r.json();
+          const s = document.createElement('div');
+          s.className = 'muted';
+          s.textContent = (new Date()).toLocaleTimeString() + ' · ' + (j?.analysis?.system_status || j?.analysis?.status || 'ok');
+          feedEl.prepend(s);
+          while (feedEl.childElementCount > 60) feedEl.lastChild.remove();
+        } catch {}
+      }, 6000);
+    }
+
+    async function send() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      inputEl.value = '';
+
+      const userDiv = addBubble('user', text);
+      const aiDiv = addBubble('ai', '');
+
+      const fd = new FormData();
+      fd.append('message', text);
+
+      const resp = await fetch('/api/chat/stream', { method:'POST', body: fd, credentials:'include' });
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+
+      let buffer = '';
+      let clientStreamId = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const events = buffer.split('\n\n');
+        buffer = events.pop();
+        for (const evt of events) {
+          const lines = evt.split('\n');
+          let data = null;
+          for (const l of lines) {
+            if (l.startsWith('data: ')) { data = l.slice(6); break; }
+          }
+          if (!data) continue;
+          try {
+            const j = JSON.parse(data);
+            if (j.type === 'status' && j.message === 'stream-start') {
+              clientStreamId = j.stream_id;
+              activeStreamId = j.stream_id;
+              aiDiv.dataset.streamId = j.stream_id;
+              continue;
+            }
+            if (j.stream_id && clientStreamId && j.stream_id !== clientStreamId) {
+              // ignore old stream leftovers
+              continue;
+            }
+            if (j.type === 'chunk') {
+              appendToBubble(aiDiv, j.content);
+            }
+            if (j.type === 'tool_result') {
+              appendToBubble(aiDiv, '\n' + j.content);
+            }
+            if (j.type === 'message_complete') {
+              // no-op, waiting final_summary/complete
+            }
+            if (j.type === 'final_summary') {
+              // could update last bubble metadata or index here
+            }
+            if (j.type === 'complete') {
+              activeStreamId = null;
+            }
+            if (j.type === 'error') {
+              appendToBubble(aiDiv, '\n\n❌ ' + j.message);
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    }
+
+    sendBtn.addEventListener('click', send);
+    inputEl.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }});
+
+    getPresence();
+    subscribeFeed();
+  </script>
+</body>
+</html>

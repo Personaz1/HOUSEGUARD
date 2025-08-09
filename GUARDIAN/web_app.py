@@ -702,7 +702,7 @@ async def login(
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request):
-    """Serve chat page"""
+    """Serve chat page (legacy)"""
     username = get_current_user(request)
     if not username:
         return RedirectResponse(url="/", status_code=302)
@@ -734,6 +734,14 @@ async def chat_page(request: Request):
         "username": username,
         "moment_time": datetime.now().strftime("%I:%M %p")
     })
+
+@app.get("/app", response_class=HTMLResponse)
+async def app_spa(request: Request):
+    """Serve new SPA shell"""
+    username = get_current_user(request)
+    if not username:
+        return RedirectResponse(url="/", status_code=302)
+    return templates.TemplateResponse("app.html", {"request": request, "username": username})
 
 # ===== Audio trigger UI and API =====
 @app.get("/audio", response_class=HTMLResponse)
@@ -885,9 +893,9 @@ async def chat_stream_endpoint(
                         out = f"✅ {result.get('result', '')}"
                     else:
                         out = f"❌ Error: {result.get('error', '')}"
-                    # Stream tool result
+                    # Stream tool result as a structured event
                     full_response += "\n" + out
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': out, 'stream_id': stream_id})}\n\n"
+                    yield f"data: {json.dumps({'type': 'tool_result', 'content': out, 'stream_id': stream_id})}\n\n"
 
                     # Add to trace for the next iteration (short line)
                     fn = getattr(tool_call, 'function_name', 'tool')
@@ -911,6 +919,15 @@ async def chat_stream_endpoint(
             system_cache.delete(cache_key_5)
             logger.info(f"🗑️ CONVERSATION CACHE: Cleared cache for {username} after new message")
 
+            # Provide final summary event for UI (SSE v2)
+            try:
+                final_summary = full_response.strip()
+                if len(final_summary) > 2000:
+                    final_summary = final_summary[:2000] + "…"
+                yield f"data: {json.dumps({'type': 'final_summary', 'content': final_summary, 'stream_id': stream_id})}\n\n"
+            except Exception:
+                pass
+
             # Clear only if still current
             if ACTIVE_STREAMS.get(username) == stream_id:
                 ACTIVE_STREAMS.pop(username, None)
@@ -922,7 +939,7 @@ async def chat_stream_endpoint(
     
     return StreamingResponse(
         generate_stream(),
-        media_type="text/plain",
+        media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",

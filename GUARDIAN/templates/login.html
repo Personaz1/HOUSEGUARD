@@ -3,18 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ΔΣ Guardian - Family Guardian Angel</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/chat.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <title>ΔΣ Guardian — Sign in</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/guardian.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         /* Login-specific styles */
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            margin: 0;
-            font-family: 'Poppins', sans-serif;
-            overflow-x: hidden;
-        }
+        body { background: radial-gradient(1000px 600px at 0% 0%, #0a1220 0%, #070b12 40%, #06080d 100%), #05070b; min-height: 100vh; margin:0; font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#e5e7eb }
         
         .container {
             display: flex;
@@ -24,100 +18,29 @@
             position: relative;
         }
         
-        .hearts {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 1;
-        }
+        .hearts { display:none }
         
-        .heart {
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            background: rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            animation: float 6s ease-in-out infinite;
-        }
-        
-        .heart:nth-child(1) { left: 10%; animation-delay: 0s; }
-        .heart:nth-child(2) { left: 20%; animation-delay: 1s; }
-        .heart:nth-child(3) { left: 30%; animation-delay: 2s; }
-        .heart:nth-child(4) { left: 40%; animation-delay: 3s; }
-        .heart:nth-child(5) { left: 50%; animation-delay: 4s; }
-        .heart:nth-child(6) { left: 60%; animation-delay: 5s; }
-        .heart:nth-child(7) { left: 70%; animation-delay: 0s; }
-        .heart:nth-child(8) { left: 80%; animation-delay: 1s; }
-        .heart:nth-child(9) { left: 90%; animation-delay: 2s; }
-        .heart:nth-child(10) { left: 95%; animation-delay: 3s; }
-        
-        @keyframes float {
-            0%, 100% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 1; }
-            100% { transform: translateY(-100px) rotate(360deg); opacity: 0; }
-        }
-        
-        .login-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 40px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-            text-align: center;
-            max-width: 400px;
-            width: 90%;
-            position: relative;
-            z-index: 2;
-        }
+        .login-card { background: rgba(16,24,36,.75); backdrop-filter: blur(8px); border:1px solid rgba(255,255,255,.06); border-radius: 16px; padding: 28px; text-align:center; max-width: 420px; width: 92%; position:relative; z-index:2 }
         
         .card-header {
             margin-bottom: 30px;
         }
         
-        .logo {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
-            margin-bottom: 10px;
-        }
+        .logo { display:flex; align-items:center; justify-content:center; gap: 12px; margin-bottom:10px }
         
-        .heart-icon {
-            font-size: 2.5rem;
-        }
+        .heart-icon { font-size: 1.8rem }
         
-        .logo h1 {
-            font-family: 'Dancing Script', cursive;
-            font-size: 2.5rem;
-            margin: 0;
-            color: #667eea;
-        }
+        .logo h1 { font-weight: 600; font-size: 1.3rem; margin:0; color:#c7d2fe; letter-spacing:.04em }
         
-        .subtitle {
-            color: #666;
-            font-size: 1.1rem;
-            margin: 0;
-        }
+        .subtitle { color:#94a3b8; font-size:.9rem; margin:0 }
         
         .welcome-text {
             margin-bottom: 30px;
         }
         
-        .welcome-text h2 {
-            color: #333;
-            font-size: 1.5rem;
-            margin-bottom: 10px;
-        }
+        .welcome-text h2 { color:#e5e7eb; font-size:1.2rem; margin-bottom:10px }
         
-        .welcome-text p {
-            color: #666;
-            font-size: 1rem;
-            line-height: 1.5;
-        }
+        .welcome-text p { color:#a3b2c2; font-size:.95rem; line-height:1.5 }
         
         .error-message {
             background: #ff4757;
@@ -145,43 +68,13 @@
             font-size: 0.95rem;
         }
         
-        .input-group input {
-            width: 100%;
-            padding: 12px 16px;
-            border: 2px solid #e1e5e9;
-            border-radius: 10px;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-            box-sizing: border-box;
-        }
+        .input-group input { width:100%; padding:12px 14px; border:1px solid rgba(255,255,255,.08); border-radius:10px; font-size:1rem; transition:.2s; box-sizing:border-box; background:#0b1119; color:#e5e7eb }
         
-        .input-group input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
+        .input-group input:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15) }
         
-        .login-btn {
-            width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
+        .login-btn { width:100%; padding:14px; background:#111827; color:#e5e7eb; border:1px solid rgba(255,255,255,.12); border-radius:10px; font-size:1rem; font-weight:600; cursor:pointer; transition:.2s; display:flex; align-items:center; justify-content:center; gap:10px }
         
-        .login-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
+        .login-btn:hover { transform: translateY(-1px); background:#0f172a }
         
         .btn-text {
             font-size: 1.1rem;
@@ -191,12 +84,7 @@
             font-size: 1.2rem;
         }
         
-        .credentials-hint {
-            background: rgba(102, 126, 234, 0.1);
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
+        .credentials-hint { display:none }
         
         .credentials-hint p {
             margin: 5px 0;
@@ -231,15 +119,7 @@
             color: #666;
         }
         
-        .decorative-elements {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 1;
-        }
+        .decorative-elements { display:none }
         
         .floating-rose {
             position: absolute;
@@ -292,18 +172,12 @@
         <!-- Main login card -->
         <div class="login-card">
             <div class="card-header">
-                <div class="logo">
-                    <span class="heart-icon">👼</span>
-                    <h1>ΔΣ Guardian</h1>
-                </div>
-                <p class="subtitle">Your Family Guardian Angel</p>
+            <div class="logo"><span class="heart-icon">🛡️</span><h1>ΔΣ Guardian</h1></div>
+            <p class="subtitle">Secure Smart Home Console</p>
             </div>
 
             <div class="card-body">
-                <div class="welcome-text">
-                    <h2>Welcome to Your Love Journey</h2>
-                    <p>Enter your special password to access your personalized relationship guidance</p>
-                </div>
+                <div class="welcome-text"><h2>Sign in</h2><p>Authenticate to access your home control, chat, and system tools.</p></div>
 
                 {% if error %}
                 <div class="error-message">
@@ -325,8 +199,8 @@
                     </div>
 
                     <button type="submit" class="login-btn">
-                        <span class="btn-text">Enter with Love</span>
-                        <span class="btn-heart">💖</span>
+                        <span class="btn-text">Continue</span>
+                        <span class="btn-heart">→</span>
                     </button>
                 </form>
 
@@ -351,12 +225,7 @@
             </div>
         </div>
 
-        <!-- Decorative elements -->
-        <div class="decorative-elements">
-            <div class="floating-rose">🌹</div>
-            <div class="floating-rose">🌹</div>
-            <div class="floating-rose">🌹</div>
-        </div>
+        <div class="decorative-elements"></div>
     </div>
 
     <script src="{{ url_for('static', path='/js/login.js') }}"></script>
