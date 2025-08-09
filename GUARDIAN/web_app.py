@@ -708,38 +708,14 @@ async def login(
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request):
-    """Serve chat page (legacy)"""
+    """Redirect legacy chat to new SPA"""
     username = get_current_user(request)
     if not username:
         return RedirectResponse(url="/", status_code=302)
-    
-    # If user came via URL with credentials, create session
-    if not verify_session(request) and request.query_params.get("username"):
-        session_id = create_session(username)
-        try:
-            globals()["CURRENT_USER"] = username
-        except Exception:
-            pass
-        response = templates.TemplateResponse("chat.html", {
-            "request": request, 
-            "username": username,
-            "moment_time": datetime.now().strftime("%I:%M %p")
-        })
-        response.set_cookie(
-            key="session_id",
-            value=session_id,
-            httponly=True,
-            secure=False,
-            samesite="lax",
-            max_age=86400
-        )
-        return response
-    
-    return templates.TemplateResponse("chat.html", {
-        "request": request, 
-        "username": username,
-        "moment_time": datetime.now().strftime("%I:%M %p")
-    })
+    # Ensure session exists
+    if not verify_session(request):
+        _ = create_session(username)
+    return RedirectResponse(url="/app", status_code=302)
 
 @app.get("/app", response_class=HTMLResponse)
 async def app_spa(request: Request):
