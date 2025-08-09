@@ -1816,40 +1816,13 @@ async def update_hidden_profile_stub(
 
 @app.get("/profile", response_class=HTMLResponse)
 async def profile_page(request: Request):
-    """Serve profile page"""
+    """Redirect to SPA"""
     username = get_current_user(request)
     if not username:
         return RedirectResponse(url="/", status_code=302)
-    
-    # If user came via URL with credentials, create session
-    if not verify_session(request) and request.query_params.get("username"):
-        session_id = create_session(username)
-        response = templates.TemplateResponse("profile.html", {
-            "request": request, 
-            "username": username,
-            "profile": get_profile_data(username)
-        })
-        response.set_cookie(
-            key="session_id",
-            value=session_id,
-            httponly=True,
-            secure=False,
-            samesite="lax",
-            max_age=86400
-        )
-        return response
-    
-    try:
-        profile_data = get_profile_data(username)
-        return templates.TemplateResponse("profile.html", {
-            "request": request, 
-            "username": username,
-            "profile": profile_data
-        })
-            
-    except Exception as e:
-        logger.error(f"Error loading profile page: {e}")
-        raise HTTPException(status_code=500, detail="Error loading profile")
+    if not verify_session(request):
+        _ = create_session(username)
+    return RedirectResponse(url="/app", status_code=302)
 
 def get_profile_data(username: str) -> Dict:
     """Get profile data for user"""
@@ -2634,45 +2607,42 @@ async def switch_model(request: Request):
 
 @app.get("/roadmap", response_class=HTMLResponse)
 async def roadmap_page(request: Request):
-    """Development roadmap page"""
+    """Redirect to SPA"""
     username = get_current_user(request)
     if not username:
         return RedirectResponse(url="/", status_code=302)
-    
-    return templates.TemplateResponse("roadmap.html", {
-        "request": request,
-        "username": username
-    })
+    if not verify_session(request):
+        _ = create_session(username)
+    return RedirectResponse(url="/app", status_code=302)
 
 @app.get("/models", response_class=HTMLResponse)
 async def models_page(request: Request):
-    """AI Models management page"""
+    """Redirect to SPA"""
     username = get_current_user(request)
     if not username:
         return RedirectResponse(url="/", status_code=302)
-    
-    return templates.TemplateResponse("models.html", {
-        "request": request,
-        "username": username
-    })
+    if not verify_session(request):
+        _ = create_session(username)
+    return RedirectResponse(url="/app", status_code=302)
 
 @app.get("/home", response_class=HTMLResponse)
 async def home_page(request: Request):
-    """SmartHouse dashboard page"""
+    """Redirect to SPA"""
     username = get_current_user(request)
     if not username:
         return RedirectResponse(url="/", status_code=302)
-    return templates.TemplateResponse("home.html", {
-        "request": request,
-        "username": username
-    })
+    if not verify_session(request):
+        _ = create_session(username)
+    return RedirectResponse(url="/app", status_code=302)
 
 @app.get("/simulator", response_class=HTMLResponse)
 async def simulator_page(request: Request):
     username = get_current_user(request)
     if not username:
         return RedirectResponse(url="/", status_code=302)
-    return templates.TemplateResponse("simulator.html", {"request": request, "username": username})
+    if not verify_session(request):
+        _ = create_session(username)
+    return RedirectResponse(url="/app", status_code=302)
 
 @app.post("/api/sim/step")
 async def api_sim_step(request: Request):
