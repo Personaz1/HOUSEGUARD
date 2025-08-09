@@ -1289,6 +1289,32 @@ async def api_home_state():
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+@app.get("/api/home/devices")
+async def api_home_devices():
+    try:
+        return JSONResponse({"success": True, "devices": home_tools.list_devices()})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+@app.post("/api/home/action")
+async def api_home_action(request: Request):
+    """Safe wrapper for a subset of actions from HomeTools."""
+    try:
+        data = await request.json()
+        action = str(data.get("action", "")).strip()
+        device_id = str(data.get("device_id", "")).strip()
+        if action not in {"switch_on","switch_off","lock_door","unlock_door"}:
+            return JSONResponse({"success": False, "error": "action not allowed"}, status_code=400)
+        if not device_id:
+            return JSONResponse({"success": False, "error": "device_id required"}, status_code=400)
+        fn = getattr(home_tools, action, None)
+        if not fn:
+            return JSONResponse({"success": False, "error": "unsupported"}, status_code=400)
+        msg = fn(device_id)
+        return JSONResponse({"success": True, "message": msg})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
 @app.get("/api/profile/{username}")
 async def get_profile_by_username(request: Request, username: str):
     """Get profile by username (for avatar loading)"""

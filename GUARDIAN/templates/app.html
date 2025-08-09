@@ -70,8 +70,20 @@
           <pre class="muted" id="audioOut"></pre>
         </div>
         <div id="view-home" style="display:none; padding:12px">
-          <div class="muted">Home state snapshot</div>
-          <pre id="homeState" style="white-space:pre-wrap"></pre>
+          <div style="display:flex; gap:12px; align-items:center; margin-bottom:8px">
+            <span class="muted">Home</span>
+            <button class="button" id="refreshHome">Refresh</button>
+          </div>
+          <div style="display:flex; gap:16px">
+            <div style="flex:1">
+              <div class="muted" style="margin-bottom:6px">Devices</div>
+              <div id="devices"></div>
+            </div>
+            <div style="flex:1">
+              <div class="muted" style="margin-bottom:6px">State snapshot</div>
+              <pre id="homeState" style="white-space:pre-wrap"></pre>
+            </div>
+          </div>
         </div>
         <div id="view-settings" style="display:none; padding:12px">
           <div class="muted" style="margin-bottom:8px">Settings</div>
@@ -260,9 +272,31 @@
 
     async function refreshHome() {
       try {
-        const r = await fetch('/api/home/state', {credentials:'include'});
-        const j = await r.json();
-        document.getElementById('homeState').textContent = JSON.stringify(j.state || j, null, 2);
+        const [rs, rd] = await Promise.all([
+          fetch('/api/home/state', {credentials:'include'}),
+          fetch('/api/home/devices', {credentials:'include'})
+        ]);
+        const js = await rs.json();
+        const jd = await rd.json();
+        document.getElementById('homeState').textContent = JSON.stringify(js.state || js, null, 2);
+        const box = document.getElementById('devices');
+        box.innerHTML='';
+        const devs = (jd.devices && (jd.devices.devices || jd.devices)) || [];
+        for (const d of devs) {
+          const id = d.id || d.device_id || d.name || 'device';
+          const card = document.createElement('div');
+          card.className = 'bubble';
+          card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><div style=\"font-weight:600\">${id}</div><div class=\"muted\">${d.type||''}</div></div><div style=\"display:flex;gap:6px\"><button class=\"button\" data-a=\"switch_on\" data-id=\"${id}\">On</button><button class=\"button\" data-a=\"switch_off\" data-id=\"${id}\">Off</button></div></div>`;
+          card.querySelector('[data-a="switch_on"]').onclick = ()=> homeAction('switch_on', id);
+          card.querySelector('[data-a="switch_off"]').onclick = ()=> homeAction('switch_off', id);
+          box.appendChild(card);
+        }
+      } catch {}
+    }
+
+    async function homeAction(action, id) {
+      try {
+        await fetch('/api/home/action', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action, device_id:id})});
       } catch {}
     }
 
@@ -318,6 +352,7 @@
       } catch {}
     });
     loadVision();
+    document.getElementById('refreshHome')?.addEventListener('click', refreshHome);
 
     switchView('chat');
     sendBtn.addEventListener('click', send);
