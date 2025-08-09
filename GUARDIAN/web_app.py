@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 
 # WebSocket connections list
 websocket_connections = []
+ACTIVE_STREAMS: Dict[str, str] = {}
 
 class WebSocketLogHandler(logging.Handler):
     """Handler для отправки логов через WebSocket"""
@@ -791,6 +792,12 @@ async def chat_stream_endpoint(
         - Feeds tool results back and continues until no more tool calls or step budget
         """
         try:
+            import uuid as _uuid
+            stream_id = str(_uuid.uuid4())
+            # Mark current active stream for user
+            ACTIVE_STREAMS[username] = stream_id
+            # Send initial status with stream_id so client can de-dup
+            yield f"data: {json.dumps({'type': 'status', 'message': 'stream-start', 'stream_id': stream_id})}\n\n"
             # Profile/context
             user_profile = UserProfile(username)
             user_profile_dict = user_profile.get_profile()
@@ -824,6 +831,18 @@ async def chat_stream_endpoint(
                 tool_context = ("\n**TOOL RESULTS SO FAR:**\n" + "\n".join(tool_trace_lines) + "\n") if tool_trace_lines else ""
                 dynamic_context = base_context + tool_context
 
+                # If новый стрим уже активен, переводим текущий шаг в фоновую системную задачу и выходим
+                if ACTIVE_STREAMS.get(username) != stream_id:
+                    try:
+                        desc = f"Continue previous chat task: {current_message}"
+                        import uuid as _uuid
+                        task_id = str(_uuid.uuid4())
+                        system_tasks[task_id] = {"id": task_id, "description": desc, "status": "queued"}
+                        asyncio.create_task(_run_system_task(task_id, desc, username))
+                        yield f"data: {json.dumps({'type': 'status', 'message': 'handed-to-background', 'task_id': task_id, 'stream_id': stream_id})}\n\n"
+                    except Exception:
+                        pass
+                    break
                 # Single-step generation with streaming chunks
                 step_text = ""
                 model_stream = ai_client.generate_streaming_response(
@@ -832,10 +851,21 @@ async def chat_stream_endpoint(
                     user_profile=user_profile_dict
                 )
                 async for step_chunk in model_stream:
+                    if ACTIVE_STREAMS.get(username) != stream_id:
+                        try:
+                            desc = f"Continue previous chat task: {current_message}"
+                            import uuid as _uuid
+                            task_id = str(_uuid.uuid4())
+                            system_tasks[task_id] = {"id": task_id, "description": desc, "status": "queued"}
+                            asyncio.create_task(_run_system_task(task_id, desc, username))
+                            yield f"data: {json.dumps({'type': 'status', 'message': 'handed-to-background', 'task_id': task_id, 'stream_id': stream_id})}\n\n"
+                        except Exception:
+                            pass
+                        break
                     if step_chunk:
                         step_text += step_chunk
                         full_response += step_chunk
-                        yield f"data: {json.dumps({'type': 'chunk', 'content': step_chunk})}\n\n"
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': step_chunk, 'stream_id': stream_id})}\n\n"
 
                 # Extract and execute tool calls found in this step
                 tool_calls = response_processor.tool_extractor.extract_tool_calls(step_text or "")
@@ -857,7 +887,7 @@ async def chat_stream_endpoint(
                         out = f"❌ Error: {result.get('error', '')}"
                     # Stream tool result
                     full_response += "\n" + out
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': out})}\n\n"
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': out, 'stream_id': stream_id})}\n\n"
 
                     # Add to trace for the next iteration (short line)
                     fn = getattr(tool_call, 'function_name', 'tool')
@@ -871,7 +901,7 @@ async def chat_stream_endpoint(
                 current_message = "CONTINUE. Integrate the TOOL RESULTS SO FAR and proceed. If task is solved, provide the final concise answer."
 
             # Completed loop
-            yield f"data: {json.dumps({'type': 'message_complete'})}\n\n"
+            yield f"data: {json.dumps({'type': 'message_complete', 'stream_id': stream_id})}\n\n"
 
             # Persist
             conversation_history.add_message(username, message, full_response)
@@ -881,11 +911,14 @@ async def chat_stream_endpoint(
             system_cache.delete(cache_key_5)
             logger.info(f"🗑️ CONVERSATION CACHE: Cleared cache for {username} after new message")
 
-            yield f"data: {json.dumps({'type': 'complete', 'timestamp': datetime.now().isoformat()})}\n\n"
+            # Clear only if still current
+            if ACTIVE_STREAMS.get(username) == stream_id:
+                ACTIVE_STREAMS.pop(username, None)
+            yield f"data: {json.dumps({'type': 'complete', 'timestamp': datetime.now().isoformat(), 'stream_id': stream_id})}\n\n"
 
         except Exception as e:
             logger.error(f"Error in streaming chat: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'stream_id': ACTIVE_STREAMS.get(username)})}\n\n"
     
     return StreamingResponse(
         generate_stream(),

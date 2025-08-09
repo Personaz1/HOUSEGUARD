@@ -28,6 +28,7 @@ async function getCurrentUserFromServer() {
     return null;
 }
 let currentStreamingMessage = null;
+let currentStreamId = null;
 let userProfile = null;
 
 let attachedFiles = []; // Track attached files for current message
@@ -344,6 +345,15 @@ async function sendStreamingMessage(message) {
 
 // Handle streaming data
 async function handleStreamData(data) {
+    if (data.stream_id) {
+        // if this is a new stream-start, reset local state
+        if (data.type === 'status' && data.message === 'stream-start') {
+            currentStreamId = data.stream_id;
+        } else if (currentStreamId && data.stream_id !== currentStreamId) {
+            // ignore stale chunks from previous streams
+            return;
+        }
+    }
     switch (data.type) {
         case 'status':
             // Remove status messages - they're just decorative
