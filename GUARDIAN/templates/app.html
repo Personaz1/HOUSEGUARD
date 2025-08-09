@@ -87,7 +87,7 @@
         </div>
         <div id="view-settings" style="display:none; padding:12px">
           <div class="muted" style="margin-bottom:8px">Settings</div>
-          <form id="visionForm" style="display:grid; gap:10px; max-width:520px">
+          <form id="visionForm" style="display:grid; gap:10px; max-width:520px; margin-bottom:16px">
             <label style="display:flex; align-items:center; gap:8px">
               <input type="checkbox" id="presenceEnabled"> Presence enabled
             </label>
@@ -103,6 +103,11 @@
               <button type="button" class="button" id="saveVision">Save</button>
             </div>
           </form>
+          <div style="display:flex; gap:10px; align-items:center">
+            <span class="muted">Model</span>
+            <select id="modelSelect" class="input" style="width:260px"></select>
+            <button class="button" id="switchModel">Switch</button>
+          </div>
         </div>
       </div>
     </div>
@@ -142,9 +147,22 @@
       try {
         const r = await fetch('/api/model-status', {credentials:'include'});
         const j = await r.json();
-        const name = j?.model?.current || j?.model?.current_model || j?.model?.model || '—';
-        const quota = j?.model?.quota || j?.model?.limits || '';
+        const status = j?.model || {};
+        const name = status.current || status.current_model || status.model || '—';
         document.getElementById('model').textContent = `model: ${name}`;
+        // Fill select
+        const sel = document.getElementById('modelSelect');
+        if (sel) {
+          sel.innerHTML = '';
+          const models = status.available_models || [];
+          for (const m of models) {
+            const opt = document.createElement('option');
+            opt.value = m.name;
+            opt.textContent = `${m.name} (quota:${m.quota})`;
+            if (m.name === name) opt.selected = true;
+            sel.appendChild(opt);
+          }
+        }
       } catch {}
     }
 
@@ -357,6 +375,12 @@
       const r = await fetch('/api/audio/listen', {method:'POST', body:fd, credentials:'include'});
       const j = await r.json();
       document.getElementById('audioOut').textContent = JSON.stringify(j, null, 2);
+    });
+    document.getElementById('switchModel')?.addEventListener('click', async ()=>{
+      const sel = document.getElementById('modelSelect');
+      if (!sel || !sel.value) return;
+      await fetch('/api/model/switch', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({model: sel.value})});
+      refreshModel();
     });
     document.getElementById('submitTask')?.addEventListener('click', async ()=>{
       const d = document.getElementById('newTask').value.trim();
