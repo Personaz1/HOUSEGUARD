@@ -1172,8 +1172,8 @@ body.theme-dark .diary-info p {
 }
 
 .panel-content {
-    padding: 20px;
-    max-height: calc(100vh - 200px);
+    padding: 16px;
+    max-height: calc(100vh - 150px);
     overflow-y: auto;
 }
 
@@ -1198,10 +1198,15 @@ body.theme-dark .diary-info p {
     margin-top: 10px;
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    min-height: 100px;
-    max-height: 300px;
+    min-height: 120px;
+    max-height: 60vh;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12.5px;
+    line-height: 1.45;
 }
 
 .status-content::-webkit-scrollbar {
@@ -1223,9 +1228,9 @@ body.theme-dark .diary-info p {
 }
 
 .status-section {
-    margin-bottom: 15px;
-    padding: 10px;
-    background: rgba(255, 255, 255, 0.05);
+    margin-bottom: 16px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.08);
     border-radius: 8px;
     border-left: 3px solid #ff1493;
 }

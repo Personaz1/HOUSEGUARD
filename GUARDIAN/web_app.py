@@ -223,7 +223,11 @@ JSON:
         except Exception:
             analysis_data = {"system_status": analysis_response}
 
+        # Сохраняем без параметров, чтобы клиенты без username тоже видели кэш
         system_cache.set("system_analysis", analysis_data, params=None, ttl_seconds=600)
+        # И дублируем с параметрами пользователя, если он есть
+        if username:
+            system_cache.set("system_analysis", analysis_data, params={"username": username, "has_user": True}, ttl_seconds=600)
         logger.info("💾 SYSTEM ANALYSIS: Background result cached")
     except Exception as e:
         logger.error(f"❌ Background system analysis error: {e}")
@@ -1360,10 +1364,11 @@ async def clear_system_analysis_cache(request: Request):
     """Clear system analysis cache"""
     try:
         username = get_current_user(request)
+        # Invalidate any variants (legacy keyed + unified key)
         cache_params = {"username": username, "has_user": bool(username)}
-        
         system_cache.invalidate("system_analysis", cache_params)
-        logger.info("🗑️ SYSTEM ANALYSIS: Cache cleared")
+        system_cache.invalidate("system_analysis")
+        logger.info("🗑️ SYSTEM ANALYSIS: Cache cleared (all variants)")
         
         return JSONResponse({
             "success": True,
@@ -1449,7 +1454,7 @@ async def get_system_analysis(request: Request):
         
         # Быстрый ответ из кэша (бэкграунд его поддерживает актуальным)
         cache_params = {"username": username, "has_user": bool(username)}
-        cached_result = system_cache.get("system_analysis", cache_params, ttl_seconds=600)
+        cached_result = system_cache.get("system_analysis", cache_params, ttl_seconds=600) or system_cache.get("system_analysis", ttl_seconds=600)
         
         if cached_result:
             logger.info("✅ SYSTEM ANALYSIS: Returning cached result")
@@ -1461,6 +1466,10 @@ async def get_system_analysis(request: Request):
             asyncio.create_task(_compute_system_analysis(username))
         except Exception:
             pass
+        # If live background snapshot is available, return it instead of generic placeholder
+        live = globals().get("system_agent").get_last() if globals().get("system_agent") else None
+        if live:
+            return JSONResponse({"success": True, "analysis": {"llm_analysis": live, "live_analysis": {}}, "timestamp": datetime.now().isoformat()})
         placeholder = {"success": True, "analysis": {"llm_analysis": {"system_status": "Analyzing... (background)", "timestamp": datetime.now().isoformat()}, "live_analysis": {}}, "timestamp": datetime.now().isoformat()}
         return JSONResponse(content=placeholder)
         
