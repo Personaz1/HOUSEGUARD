@@ -1131,6 +1131,22 @@ async def submit_system_task(request: Request, description: str = Form(...)):
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+@app.post("/api/system-task/submit-json")
+async def submit_system_task_json(request: Request):
+    """Submit system task using JSON body: {"description":"..."}."""
+    try:
+        data = await request.json()
+        description = str(data.get("description", "")).strip()
+        if not description:
+            return JSONResponse({"success": False, "error": "description required"}, status_code=400)
+        username = get_current_user(request)
+        task_id = str(uuid.uuid4())
+        system_tasks[task_id] = {"id": task_id, "description": description, "status": "queued"}
+        asyncio.create_task(_run_system_task(task_id, description, username))
+        return JSONResponse({"success": True, "task_id": task_id})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
 
 @app.get("/api/system-task/{task_id}")
 async def get_system_task(task_id: str):
@@ -1193,6 +1209,48 @@ async def get_house_events(limit: int = 50):
         return JSONResponse({"success": True, "events": ev})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+@app.get("/api/house/events/stream")
+async def stream_house_events():
+    """Server-Sent Events for house events aggregated from SmartHouse /ui/stream."""
+    async def event_generator():
+        last_len = 0
+        # On connect: replay recent tail
+        try:
+            snapshot = list(_smarthouse_events)
+            last_len = len(snapshot)
+            tail = snapshot[-20:]
+            for ev in tail:
+                yield f"data: {json.dumps(ev)}\n\n"
+        except Exception:
+            pass
+        # Live loop
+        while True:
+            try:
+                cur = list(_smarthouse_events)
+                if len(cur) > last_len:
+                    new_items = cur[last_len:]
+                    last_len = len(cur)
+                    for ev in new_items:
+                        yield f"data: {json.dumps(ev)}\n\n"
+                else:
+                    # heartbeat
+                    yield ": keep-alive\n\n"
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream",
+        }
+    )
 
 @app.get("/api/presence")
 async def api_presence():

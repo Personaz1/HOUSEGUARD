@@ -52,7 +52,11 @@
           </div>
         </div>
         <div id="view-tasks" style="display:none; padding:12px">
-          <div style="margin-bottom:8px" class="muted">Background tasks</div>
+          <div style="margin-bottom:8px; display:flex; gap:8px; align-items:center">
+            <span class="muted">Background tasks</span>
+            <input class="input" id="newTask" placeholder="Describe a task…" style="flex:0 0 360px">
+            <button class="button" id="submitTask">Submit</button>
+          </div>
           <div id="tasks"></div>
         </div>
         <div id="view-vision" style="display:none; padding:12px">
@@ -67,7 +71,23 @@
           <pre id="homeState" style="white-space:pre-wrap"></pre>
         </div>
         <div id="view-settings" style="display:none; padding:12px">
-          <div class="muted">Settings (stub)</div>
+          <div class="muted" style="margin-bottom:8px">Settings</div>
+          <form id="visionForm" style="display:grid; gap:10px; max-width:520px">
+            <label style="display:flex; align-items:center; gap:8px">
+              <input type="checkbox" id="presenceEnabled"> Presence enabled
+            </label>
+            <label>
+              <div class="muted">Allowed camera IDs (comma-separated)</div>
+              <input class="input" id="allowedIds" placeholder="0,1,2">
+            </label>
+            <label>
+              <div class="muted">Default camera ID</div>
+              <input class="input" id="defaultCam" placeholder="0">
+            </label>
+            <div>
+              <button type="button" class="button" id="saveVision">Save</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -104,20 +124,23 @@
     }
 
     function subscribeFeed() {
-      // SmartHouse aggregated feed (server pulls from /ui/stream behind the scenes)
-      // Here we render last events snapshot via polling for simplicity (SSE wiring can be added later)
-      setInterval(async ()=>{
-        try {
-          const r = await fetch('/api/system-analysis', {credentials:'include'});
-          if (!r.ok) return;
-          const j = await r.json();
-          const s = document.createElement('div');
-          s.className = 'muted';
-          s.textContent = (new Date()).toLocaleTimeString() + ' · ' + (j?.analysis?.system_status || j?.analysis?.status || 'ok');
-          feedEl.prepend(s);
-          while (feedEl.childElementCount > 60) feedEl.lastChild.remove();
-        } catch {}
-      }, 6000);
+      // SmartHouse aggregated feed via SSE
+      try {
+        const es = new EventSource('/api/house/events/stream');
+        es.onmessage = (e)=>{
+          try {
+            const j = JSON.parse(e.data);
+            const s = document.createElement('div');
+            s.className = 'muted';
+            const kind = j?.type || 'event';
+            const ts = j?.ts || new Date().toISOString();
+            s.textContent = `${new Date(ts).toLocaleTimeString()} · ${kind}`;
+            feedEl.prepend(s);
+            while (feedEl.childElementCount > 120) feedEl.lastChild.remove();
+          } catch {}
+        };
+        es.onerror = ()=>{};
+      } catch {}
     }
 
     async function send() {
@@ -248,6 +271,40 @@
       const j = await r.json();
       document.getElementById('audioOut').textContent = JSON.stringify(j, null, 2);
     });
+    document.getElementById('submitTask')?.addEventListener('click', async ()=>{
+      const d = document.getElementById('newTask').value.trim();
+      if (!d) return;
+      await fetch('/api/system-task/submit-json', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({description:d})});
+      document.getElementById('newTask').value='';
+      refreshTasks();
+    });
+
+    // Settings form handlers
+    async function loadVision() {
+      try {
+        const r = await fetch('/api/vision/settings', {credentials:'include'});
+        const j = await r.json();
+        const s = j.settings || {};
+        document.getElementById('presenceEnabled').checked = !!s.presence_enabled;
+        document.getElementById('allowedIds').value = (s.allowed_ids || []).join(',');
+        document.getElementById('defaultCam').value = s.default_camera_id || '0';
+      } catch {}
+    }
+    document.getElementById('saveVision')?.addEventListener('click', async ()=>{
+      try {
+        const body = {
+          presence_enabled: document.getElementById('presenceEnabled').checked,
+          allowed_ids: document.getElementById('allowedIds').value,
+          default_camera_id: document.getElementById('defaultCam').value
+        };
+        const r = await fetch('/api/vision/settings', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+        const j = await r.json();
+        const s = document.createElement('div'); s.className='muted'; s.textContent='Saved';
+        document.getElementById('view-settings').prepend(s);
+        setTimeout(()=>s.remove(), 1500);
+      } catch {}
+    });
+    loadVision();
 
     switchView('chat');
     sendBtn.addEventListener('click', send);
