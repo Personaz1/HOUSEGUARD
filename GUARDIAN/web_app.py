@@ -1233,7 +1233,7 @@ async def stream_house_events():
                         yield f"data: {json.dumps(ev)}\n\n"
                 else:
                     # heartbeat
-                    yield ": keep-alive\n\n"
+                    yield "event: ping\n" + f"data: {json.dumps({'ts': datetime.now().isoformat()})}\n\n"
                 await asyncio.sleep(1.0)
             except asyncio.CancelledError:
                 break
@@ -1274,20 +1274,35 @@ async def api_home_devices():
 
 @app.post("/api/home/action")
 async def api_home_action(request: Request):
-    """Safe wrapper for a subset of actions from HomeTools."""
+    """Safe wrapper for a subset of actions from HomeTools (light/lock/thermostat)."""
     try:
         data = await request.json()
         action = str(data.get("action", "")).strip()
         device_id = str(data.get("device_id", "")).strip()
-        if action not in {"switch_on","switch_off","lock_door","unlock_door"}:
-            return JSONResponse({"success": False, "error": "action not allowed"}, status_code=400)
         if not device_id:
             return JSONResponse({"success": False, "error": "device_id required"}, status_code=400)
-        fn = getattr(home_tools, action, None)
-        if not fn:
-            return JSONResponse({"success": False, "error": "unsupported"}, status_code=400)
-        msg = fn(device_id)
-        return JSONResponse({"success": True, "message": msg})
+
+        if action in {"switch_on", "switch_off", "lock_door", "unlock_door"}:
+            fn = getattr(home_tools, action, None)
+            if not fn:
+                return JSONResponse({"success": False, "error": "unsupported"}, status_code=400)
+            msg = fn(device_id)
+            return JSONResponse({"success": True, "message": msg})
+
+        if action == "set_thermostat":
+            temperature = data.get("temperature")
+            if temperature is None:
+                return JSONResponse({"success": False, "error": "temperature required"}, status_code=400)
+            msg = home_tools.set_thermostat(device_id, float(temperature))
+            return JSONResponse({"success": True, "message": msg})
+
+        if action == "control_light":
+            state = bool(data.get("state", True))
+            brightness = data.get("brightness")
+            msg = home_tools.control_light(device_id, state, int(brightness) if brightness is not None else None)
+            return JSONResponse({"success": True, "message": msg})
+
+        return JSONResponse({"success": False, "error": "action not allowed"}, status_code=400)
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 

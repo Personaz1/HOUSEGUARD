@@ -240,8 +240,10 @@
         const r = await fetch(`/api/conversation-history?limit=${limit}`, {credentials:'include'});
         const j = await r.json();
         if (!j?.success) return;
-        // Render minimal bubbles: user and ai_response per item
-        for (const m of j.history || []) {
+        // Render minimal bubbles in pairs per entry
+        const hist = j.history || [];
+        for (let i=0;i<hist.length;i++) {
+          const m = hist[i];
           addBubble('user', (m.message||''));
           addBubble('ai', (m.ai_response||''));
         }
@@ -299,17 +301,42 @@
           const id = d.id || d.device_id || d.name || 'device';
           const card = document.createElement('div');
           card.className = 'bubble';
-          card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><div style=\"font-weight:600\">${id}</div><div class=\"muted\">${d.type||''}</div></div><div style=\"display:flex;gap:6px\"><button class=\"button\" data-a=\"switch_on\" data-id=\"${id}\">On</button><button class=\"button\" data-a=\"switch_off\" data-id=\"${id}\">Off</button></div></div>`;
+          card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style=\"font-weight:600\">${id}</div>
+              <div class=\"muted\">${d.type||''}</div>
+            </div>
+            <div style=\"display:flex; gap:6px; align-items:center\">
+              <button class=\"button\" data-a=\"switch_on\" data-id=\"${id}\">On</button>
+              <button class=\"button\" data-a=\"switch_off\" data-id=\"${id}\">Off</button>
+              <button class=\"button\" data-a=\"lock_door\" data-id=\"${id}\">Lock</button>
+              <button class=\"button\" data-a=\"unlock_door\" data-id=\"${id}\">Unlock</button>
+              <input class=\"input\" style=\"width:80px\" placeholder=\"22.0\" data-a=\"thermo\" data-id=\"${id}\" />
+              <button class=\"button\" data-a=\"set_thermostat\" data-id=\"${id}\">Set °C</button>
+              <input class=\"input\" style=\"width:80px\" placeholder=\"50\" data-a=\"brightness\" data-id=\"${id}\" />
+              <button class=\"button\" data-a=\"control_light\" data-id=\"${id}\">Set %</button>
+            </div>
+          </div>`;
           card.querySelector('[data-a="switch_on"]').onclick = ()=> homeAction('switch_on', id);
           card.querySelector('[data-a="switch_off"]').onclick = ()=> homeAction('switch_off', id);
+          card.querySelector('[data-a="lock_door"]').onclick = ()=> homeAction('lock_door', id);
+          card.querySelector('[data-a="unlock_door"]').onclick = ()=> homeAction('unlock_door', id);
+          card.querySelector('[data-a="set_thermostat"]').onclick = ()=> {
+            const v = card.querySelector('[data-a="thermo"][data-id="'+id+'"]').value;
+            homeAction('set_thermostat', id, {temperature: parseFloat(v||'0')});
+          };
+          card.querySelector('[data-a="control_light"]').onclick = ()=> {
+            const v = card.querySelector('[data-a="brightness"][data-id="'+id+'"]').value;
+            homeAction('control_light', id, {state:true, brightness: parseInt(v||'0')});
+          };
           box.appendChild(card);
         }
       } catch {}
     }
 
-    async function homeAction(action, id) {
+    async function homeAction(action, id, extra={}) {
       try {
-        await fetch('/api/home/action', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action, device_id:id})});
+        await fetch('/api/home/action', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Object.assign({action, device_id:id}, extra))});
       } catch {}
     }
 
