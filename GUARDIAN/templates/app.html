@@ -126,6 +126,16 @@
       } catch {}
     }
 
+    async function refreshModel() {
+      try {
+        const r = await fetch('/api/model-status', {credentials:'include'});
+        const j = await r.json();
+        const name = j?.model?.current || j?.model?.current_model || j?.model?.model || '—';
+        const quota = j?.model?.quota || j?.model?.limits || '';
+        document.getElementById('model').textContent = `model: ${name}`;
+      } catch {}
+    }
+
     function subscribeFeed() {
       // SmartHouse aggregated feed via SSE
       try {
@@ -318,6 +328,7 @@
     });
 
     getPresence();
+    refreshModel();
     subscribeFeed();
   </script>
 </body>

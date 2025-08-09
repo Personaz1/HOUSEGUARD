@@ -130,6 +130,12 @@ VISION_PRESENCE_ENABLED: bool = os.getenv("VISION_PRESENCE_ENABLED", "true").low
 _allowed_ids_env = os.getenv("VISION_ALLOWED_IDS", "").strip()
 VISION_ALLOWED_IDS: List[str] = [s.strip() for s in _allowed_ids_env.split(",") if s.strip()] if _allowed_ids_env else []
 
+def _get_model_status() -> Dict[str, Any]:
+    try:
+        return ai_client.get_model_status()
+    except Exception as e:
+        return {"error": str(e)}
+
 def _get_presence_snapshot() -> Dict[str, Any]:
     try:
         if not VISION_PRESENCE_ENABLED:
@@ -1178,6 +1184,22 @@ async def get_profile(request: Request):
             "success": False,
             "error": str(e)
         }, status_code=500)
+
+@app.get("/api/model-status")
+async def api_model_status():
+    return JSONResponse({"success": True, "model": _get_model_status()})
+
+@app.post("/api/model/switch")
+async def api_model_switch(request: Request):
+    try:
+        data = await request.json()
+        name = data.get("model")
+        if not name:
+            return JSONResponse({"success": False, "error": "model required"}, status_code=400)
+        ok = ai_client.switch_to_model(str(name))
+        return JSONResponse({"success": ok})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 # --- New lightweight API for SPA ---
 
