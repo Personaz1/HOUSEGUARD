@@ -1536,6 +1536,20 @@ async def clear_conversation_history(request: Request):
             "error": str(e)
         }, status_code=500)
 
+@app.post("/api/conversation-history/clear")
+async def clear_conversation_history(request: Request):
+    username = get_current_user(request)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        conversation_history.clear_history()
+        # clear caches
+        system_cache.delete(f"conversation_history_{username}_20")
+        system_cache.delete(f"conversation_history_{username}_5")
+        return JSONResponse({"success": True})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
 @app.get("/api/conversation-archive")
 async def get_conversation_archive(request: Request):
     """Get conversation archive"""

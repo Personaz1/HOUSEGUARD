@@ -48,7 +48,10 @@
           <div class="chat" id="chat"></div>
           <div class="composer">
             <textarea id="input" placeholder="Type a message…"></textarea>
-            <button id="send">Send</button>
+            <div style="display:flex; gap:8px">
+              <button id="send">Send</button>
+              <button id="clearHistory">Clear</button>
+            </div>
           </div>
         </div>
         <div id="view-tasks" style="display:none; padding:12px">
@@ -309,6 +312,10 @@
     switchView('chat');
     sendBtn.addEventListener('click', send);
     inputEl.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }});
+    document.getElementById('clearHistory')?.addEventListener('click', async ()=>{
+      await fetch('/api/conversation-history/clear', {method:'POST', credentials:'include'});
+      const div = document.createElement('div'); div.className='bubble ai'; div.textContent='History cleared'; chatEl.appendChild(div);
+    });
 
     getPresence();
     subscribeFeed();
