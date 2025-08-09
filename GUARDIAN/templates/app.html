@@ -263,12 +263,21 @@
         const r = await fetch(`/api/conversation-history?limit=${limit}`, {credentials:'include'});
         const j = await r.json();
         if (!j?.success) return;
-        // Render minimal bubbles in pairs per entry
+        // Render threading by stream_id when present
         const hist = j.history || [];
-        for (let i=0;i<hist.length;i++) {
-          const m = hist[i];
-          addBubble('user', (m.message||''));
-          addBubble('ai', (m.ai_response||''));
+        const groups = {};
+        for (const m of hist) {
+          const sid = m.stream_id || `msg_${m.id || Math.random()}`;
+          if (!groups[sid]) groups[sid] = [];
+          groups[sid].push(m);
+        }
+        const ordered = Object.values(groups);
+        for (const msgs of ordered) {
+          const first = msgs[0];
+          addBubble('user', (first.message||''));
+          // merge ai responses
+          const merged = msgs.map(x=>x.ai_response||'').join('\n');
+          addBubble('ai', merged);
         }
       } catch {}
     }

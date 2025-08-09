@@ -136,7 +136,7 @@ class ConversationHistory:
             logger.error(f"Error saving conversation archive: {e}")
     
     def add_message(self, user: str, message: str, ai_response: str, 
-                   context: Optional[str] = None) -> None:
+                   context: Optional[str] = None, stream_id: Optional[str] = None) -> None:
         """Add a new message to conversation history"""
         entry = {
             'id': f"msg_{len(self.history)}_{datetime.now().timestamp()}",
@@ -145,7 +145,8 @@ class ConversationHistory:
             'message': message,
             'ai_response': ai_response,
             'context': context or "",
-            'type': 'conversation'
+            'type': 'conversation',
+            'stream_id': stream_id
         }
         
         self.history.append(entry)

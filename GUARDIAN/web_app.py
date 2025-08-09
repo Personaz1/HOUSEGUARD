@@ -935,8 +935,8 @@ async def chat_stream_endpoint(
             # Completed loop
             yield f"data: {json.dumps({'type': 'message_complete', 'stream_id': stream_id})}\n\n"
 
-            # Persist
-            conversation_history.add_message(username, message, full_response)
+            # Persist with stream id for threading
+            conversation_history.add_message(username, message, full_response, stream_id=stream_id)
             cache_key = f"conversation_history_{username}_20"
             system_cache.delete(cache_key)
             cache_key_5 = f"conversation_history_{username}_5"
@@ -1022,7 +1022,7 @@ async def chat_endpoint(
         
         logger.info(f"🔧 CHAT: Response processing completed")
         
-        # Save to conversation history
+        # Save to conversation history (non-stream)
         conversation_history.add_message(username, message, ai_response)
         
         # Clear conversation history cache to force refresh
