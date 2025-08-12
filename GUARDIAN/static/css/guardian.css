@@ -10,3 +10,8 @@ hr{border:none;border-top:1px solid var(--border)}
 .button{background:#111827;color:var(--text);border:1px solid rgba(255,255,255,.12);padding:10px 14px;border-radius:10px;cursor:pointer}
 .input{background:#0b1119;color:var(--text);border:1px solid rgba(255,255,255,.08);padding:12px;border-radius:10px}
 .badge{background:#101826;color:#9fb2ca;border-radius:999px;padding:4px 8px;font-size:12px} 
+/* Chat UX helpers */
+.chip{padding:2px 6px;border-radius:999px;background:#0f1720;border:1px solid rgba(255,255,255,.08);color:#9fb2ca;font-size:11px}
+.tool-result{margin-top:8px;border:1px dashed rgba(255,255,255,.14);background:#0a1018;border-radius:10px;overflow:hidden}
+.tool-result summary{list-style:none;cursor:pointer;padding:8px 10px;color:#9fb2ca;display:flex;align-items:center;gap:8px}
+.tool-result .payload{padding:8px 10px;white-space:pre-wrap;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;font-size:12px}

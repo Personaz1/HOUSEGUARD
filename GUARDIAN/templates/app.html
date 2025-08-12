@@ -18,8 +18,16 @@
     .topbar { height:52px; border-bottom:1px solid rgba(255,255,255,.06); display:flex; align-items:center; justify-content:space-between; padding:0 12px; background:#0d131b }
     .pill { padding:6px 10px; border-radius:999px; background:#101826; color:#9fb2ca; font-size:12px }
     .chat { flex:1; overflow:auto; padding:16px }
-    .bubble { border:1px solid rgba(255,255,255,.08); background:#0c1520; border-radius:14px; padding:12px 14px; margin:10px 0; max-width:900px }
+    .bubble { position:relative; border:1px solid rgba(255,255,255,.08); background:#0c1520; border-radius:14px; padding:12px 14px; margin:10px 0; max-width:900px }
     .bubble.user { background:#101926; border-color:rgba(120,190,255,.18) }
+    .bubble .copy-btn { position:absolute; top:8px; right:8px; opacity:.0; transition:.15s; font-size:12px; padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:#111827; color:#cbd5e1; cursor:pointer }
+    .bubble:hover .copy-btn { opacity:1 }
+    .bubble .statusbar { position:absolute; top:8px; left:12px; display:flex; gap:6px; align-items:center; opacity:.7; font-size:12px }
+    .chip { padding:2px 6px; border-radius:999px; background:#0f1720; border:1px solid rgba(255,255,255,.08); color:#9fb2ca; font-size:11px }
+    .tool-result { margin-top:8px; border:1px dashed rgba(255,255,255,.14); background:#0a1018; border-radius:10px; overflow:hidden }
+    .tool-result summary { list-style:none; cursor:pointer; padding:8px 10px; color:#9fb2ca; display:flex; align-items:center; gap:8px }
+    .tool-result summary::marker { display:none }
+    .tool-result .payload { padding:8px 10px; white-space:pre-wrap; color:#cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px }
     .composer { border-top:1px solid rgba(255,255,255,.06); padding:10px; display:flex; gap:8px }
     .composer textarea { flex:1; resize:none; min-height:52px; max-height:180px; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.1); background:#0b1119; color:#e5e7eb }
     .composer button { background:#1e293b; color:#e5e7eb; border:1px solid rgba(255,255,255,.12); padding:10px 14px; border-radius:12px; cursor:pointer }
@@ -129,13 +137,66 @@
       const div = document.createElement('div');
       div.className = 'bubble ' + role;
       div.innerHTML = html;
+      // Statusbar placeholder (for AI bubbles)
+      if (role === 'ai') {
+        const sb = document.createElement('div');
+        sb.className = 'statusbar';
+        sb.innerHTML = '<span class="chip">…</span>';
+        div.appendChild(sb);
+      }
+      // Copy button
+      const copy = document.createElement('button');
+      copy.className = 'copy-btn';
+      copy.textContent = 'Copy';
+      copy.onclick = async (e)=>{
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(div.innerText);
+          copy.textContent = 'Copied';
+          setTimeout(()=> copy.textContent = 'Copy', 1200);
+        } catch {}
+      };
+      div.appendChild(copy);
       chatEl.appendChild(div);
       chatEl.scrollTop = chatEl.scrollHeight;
       return div;
     }
 
     function appendToBubble(div, text) {
-      div.innerHTML += text;
+      // Insert before copy button to preserve overlay
+      const copyBtn = div.querySelector('.copy-btn');
+      const statusbar = div.querySelector('.statusbar');
+      // Create a span chunk container
+      const chunk = document.createElement('span');
+      chunk.textContent = text;
+      if (copyBtn) {
+        div.insertBefore(chunk, copyBtn);
+      } else {
+        div.appendChild(chunk);
+      }
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function appendToolResult(div, content) {
+      const copyBtn = div.querySelector('.copy-btn');
+      const details = document.createElement('details');
+      details.className = 'tool-result';
+      // Collapse by default if long
+      const isLong = (content || '').length > 220;
+      details.open = !isLong ? true : false;
+      const summary = document.createElement('summary');
+      const icon = content && content.trim().startsWith('✅') ? '🧩' : '🛠️';
+      summary.innerHTML = `${icon} Tool result ${isLong ? '(click to expand)' : ''}`;
+      const pre = document.createElement('div');
+      pre.className = 'payload';
+      pre.textContent = content || '';
+      details.appendChild(summary);
+      details.appendChild(pre);
+      if (copyBtn) {
+        div.insertBefore(details, copyBtn);
+      } else {
+        div.appendChild(details);
+      }
       chatEl.scrollTop = chatEl.scrollHeight;
     }
 
@@ -168,6 +229,16 @@
             sel.appendChild(opt);
           }
         }
+      } catch {}
+    }
+
+    async function refreshSystemStrip() {
+      try {
+        const r = await fetch('/api/system/status', {credentials:'include'});
+        const j = await r.json();
+        if (!j?.success) return;
+        const m = j.model || '—';
+        document.getElementById('model').textContent = `model: ${m}`;
       } catch {}
     }
 
@@ -229,6 +300,8 @@
               clientStreamId = j.stream_id;
               activeStreamId = j.stream_id;
               aiDiv.dataset.streamId = j.stream_id;
+              const sb = aiDiv.querySelector('.statusbar');
+              if (sb) sb.innerHTML = '<span class="chip">streaming</span>';
               continue;
             }
             if (j.stream_id && clientStreamId && j.stream_id !== clientStreamId) {
@@ -239,7 +312,7 @@
               appendToBubble(aiDiv, j.content);
             }
             if (j.type === 'tool_result') {
-              appendToBubble(aiDiv, '\n' + j.content);
+              appendToolResult(aiDiv, j.content);
             }
             if (j.type === 'message_complete') {
               // no-op, waiting final_summary/complete
@@ -249,18 +322,20 @@
             }
             if (j.type === 'complete') {
               activeStreamId = null;
+              const sb = aiDiv.querySelector('.statusbar');
+              if (sb) sb.innerHTML = '<span class="chip">✓ complete</span>';
             }
             if (j.type === 'error') {
-              appendToBubble(aiDiv, '\n\n❌ ' + j.message);
+              appendToolResult(aiDiv, '❌ ' + j.message);
             }
           } catch { /* ignore */ }
         }
       }
     }
 
-    async function loadHistory(limit=20) {
+    async function loadHistory(limit=20, offset=0, prepend=false) {
       try {
-        const r = await fetch(`/api/conversation-history?limit=${limit}`, {credentials:'include'});
+        const r = await fetch(`/api/conversation-history?limit=${limit}&offset=${offset}`, {credentials:'include'});
         const j = await r.json();
         if (!j?.success) return;
         // Render threading by stream_id when present
@@ -274,10 +349,14 @@
         const ordered = Object.values(groups);
         for (const msgs of ordered) {
           const first = msgs[0];
-          addBubble('user', (first.message||''));
+          const u = addBubble('user', (first.message||''));
           // merge ai responses
           const merged = msgs.map(x=>x.ai_response||'').join('\n');
-          addBubble('ai', merged);
+          const a = addBubble('ai', merged);
+          if (prepend) {
+            chatEl.insertBefore(a, chatEl.firstChild);
+            chatEl.insertBefore(u, chatEl.firstChild);
+          }
         }
       } catch {}
     }
@@ -326,16 +405,34 @@
         const js = await rs.json();
         const jd = await rd.json();
         document.getElementById('homeState').textContent = JSON.stringify(js.state || js, null, 2);
-        const box = document.getElementById('devices');
-        box.innerHTML='';
+         const box = document.getElementById('devices');
+         box.innerHTML='';
+         // Mass actions toolbar
+         const toolbar = document.createElement('div');
+         toolbar.className = 'bubble';
+         toolbar.innerHTML = `
+           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+             <span class="muted">Selected:</span>
+             <button class="button" id="massOn">On</button>
+             <button class="button" id="massOff">Off</button>
+             <input class="input" id="massPct" placeholder="50" style="width:80px" />
+             <button class="button" id="massBrightness">Set %</button>
+             <input class="input" id="massTemp" placeholder="22.0" style="width:80px" />
+             <button class="button" id="massThermo">Set °C</button>
+           </div>`;
+         box.appendChild(toolbar);
+         const selected = new Set();
         const devs = (jd.devices && (jd.devices.devices || jd.devices)) || [];
         for (const d of devs) {
           const id = d.id || d.device_id || d.name || 'device';
           const card = document.createElement('div');
           card.className = 'bubble';
-          card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
+          card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center; gap:10px">
             <div>
-              <div style=\"font-weight:600\">${id}</div>
+              <label style="display:flex; align-items:center; gap:8px">
+                <input type="checkbox" data-sel="${id}" />
+                <div style=\"font-weight:600\">${id}</div>
+              </label>
               <div class=\"muted\">${d.type||''}</div>
             </div>
             <div style=\"display:flex; gap:6px; align-items:center\">
@@ -349,6 +446,10 @@
               <button class=\"button\" data-a=\"control_light\" data-id=\"${id}\">Set %</button>
             </div>
           </div>`;
+          // selection checkbox handler
+          card.querySelector(`input[data-sel="${id}"]`).onchange = (e)=>{
+            if (e.target.checked) selected.add(id); else selected.delete(id);
+          };
           card.querySelector('[data-a="switch_on"]').onclick = ()=> homeAction('switch_on', id);
           card.querySelector('[data-a="switch_off"]').onclick = ()=> homeAction('switch_off', id);
           card.querySelector('[data-a="lock_door"]').onclick = ()=> homeAction('lock_door', id);
@@ -363,6 +464,21 @@
           };
           box.appendChild(card);
         }
+        // Mass action handlers
+        toolbar.querySelector('#massOn').onclick = ()=>{
+          selected.forEach(id=> homeAction('switch_on', id));
+        };
+        toolbar.querySelector('#massOff').onclick = ()=>{
+          selected.forEach(id=> homeAction('switch_off', id));
+        };
+        toolbar.querySelector('#massBrightness').onclick = ()=>{
+          const v = parseInt(toolbar.querySelector('#massPct').value||'0');
+          selected.forEach(id=> homeAction('control_light', id, {state:true, brightness:v}));
+        };
+        toolbar.querySelector('#massThermo').onclick = ()=>{
+          const v = parseFloat(toolbar.querySelector('#massTemp').value||'0');
+          selected.forEach(id=> homeAction('set_thermostat', id, {temperature:v}));
+        };
       } catch {}
     }
 
@@ -452,8 +568,21 @@
 
     getPresence();
     refreshModel();
+    setInterval(refreshSystemStrip, 8000);
     subscribeFeed();
-    loadHistory(10);
+    // initial load
+    let historyOffset = 0;
+    const pageSize = 20;
+    await loadHistory(pageSize, historyOffset);
+    historyOffset += pageSize;
+    // infinite scroll up
+    const chatScroll = document.getElementById('chat');
+    chatScroll.addEventListener('scroll', async ()=>{
+      if (chatScroll.scrollTop < 20) {
+        await loadHistory(pageSize, historyOffset, true);
+        historyOffset += pageSize;
+      }
+    });
   </script>
 </body>
 </html>

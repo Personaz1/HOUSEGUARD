@@ -834,7 +834,7 @@ async def chat_stream_endpoint(
             user_profile = UserProfile(username)
             user_profile_dict = user_profile.get_profile()
             user_profile_dict['username'] = username
-
+            
             recent_messages = conversation_history.get_recent_history(limit=666)
             base_context = ""
             if recent_messages:
@@ -877,11 +877,11 @@ async def chat_stream_endpoint(
                     break
                 # Single-step generation with streaming chunks
                 step_text = ""
-                model_stream = ai_client.generate_streaming_response(
+            model_stream = ai_client.generate_streaming_response(
                     user_message=current_message,
                     context=dynamic_context,
-                    user_profile=user_profile_dict
-                )
+                user_profile=user_profile_dict
+            )
                 async for step_chunk in model_stream:
                     if ACTIVE_STREAMS.get(username) != stream_id:
                         try:
@@ -942,7 +942,7 @@ async def chat_stream_endpoint(
             cache_key_5 = f"conversation_history_{username}_5"
             system_cache.delete(cache_key_5)
             logger.info(f"🗑️ CONVERSATION CACHE: Cleared cache for {username} after new message")
-
+            
             # Provide final summary event for UI (SSE v2)
             try:
                 final_summary = full_response.strip()
@@ -956,7 +956,7 @@ async def chat_stream_endpoint(
             if ACTIVE_STREAMS.get(username) == stream_id:
                 ACTIVE_STREAMS.pop(username, None)
             yield f"data: {json.dumps({'type': 'complete', 'timestamp': datetime.now().isoformat(), 'stream_id': stream_id})}\n\n"
-
+            
         except Exception as e:
             logger.error(f"Error in streaming chat: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'stream_id': ACTIVE_STREAMS.get(username)})}\n\n"
@@ -1314,6 +1314,27 @@ async def api_home_devices():
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+# --- System status summary for SPA ---
+@app.get("/api/system/status")
+async def api_system_status():
+    try:
+        # model
+        ms = _get_model_status()
+        model_name = ms.get("current_model") or ms.get("current") or ms.get("model")
+        # presence snapshot (throttled method handles its own throttle)
+        presence = _get_presence_snapshot()
+        # events
+        ev_len = len(_smarthouse_events)
+        last_ts = _smarthouse_events[-1]["ts"] if ev_len else None
+        return JSONResponse({
+            "success": True,
+            "model": model_name,
+            "presence": presence,
+            "events": {"count": ev_len, "last_ts": last_ts}
+        })
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
 @app.post("/api/home/action")
 async def api_home_action(request: Request):
     """Safe wrapper for a subset of actions from HomeTools (light/lock/thermostat)."""
@@ -1494,7 +1515,8 @@ async def update_feeling(
 @app.get("/api/conversation-history")
 async def get_conversation_history(
     request: Request,
-    limit: int = 20
+    limit: int = 20,
+    offset: int = 0
 ):
     """Get conversation history - optimized for speed"""
     username = get_current_user(request)
@@ -1569,10 +1591,15 @@ async def get_conversation_history(
                 "cached": False
             })
         
-        # Optimize limit for faster loading
-        optimized_limit = min(limit, 50)
-        logger.info(f"🔄 CONVERSATION HISTORY: Fetching fresh data for {username}")
-        history = conversation_history.get_recent_history(limit=optimized_limit)
+        # Optimize limit and compute offset from the end (pagination backwards)
+        optimized_limit = max(1, min(int(limit), 100))
+        safe_offset = max(0, int(offset))
+        logger.info(f"🔄 CONVERSATION HISTORY: Fetching fresh data for {username} limit={optimized_limit} offset={safe_offset}")
+        full = conversation_history.get_full_history()
+        total = len(full)
+        start = max(0, total - safe_offset - optimized_limit)
+        end = max(0, total - safe_offset)
+        history = full[start:end]
         
         # Кэшируем результат на 10 секунд для мгновенного обновления
         system_cache.set(cache_key, history, ttl_seconds=10)
@@ -1583,6 +1610,8 @@ async def get_conversation_history(
             "success": True,
             "history": history,
             "count": len(history),
+            "offset": safe_offset,
+            "total": total,
             "cached": False
         })
         
@@ -2123,7 +2152,7 @@ System Status:
         except Exception:
             smarthouse_state = {"error": "unavailable"}
         recent_events = list(_smarthouse_events)[-20:]
-
+        
         # Get recent file changes and system status + vision status
         recent_changes = get_recent_file_changes()
         system_health = ai_client.system.diagnose_system_health()
