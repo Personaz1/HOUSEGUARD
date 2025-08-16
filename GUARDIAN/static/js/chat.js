@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
         loadUserProfile(),
 
         loadConversationHistory(),
-        loadSystemAnalysis()
+        loadSystemAnalysis() // ВОССТАНАВЛИВАЕМ! Анализ при старте
     ]).then(() => {
         // Hide loading banner when everything is loaded
         hideLoadingBanner();
@@ -1179,30 +1179,53 @@ function createChatHearts() {
 // Start floating hearts
 createChatHearts(); 
 
-// Load system analysis
+// Load system analysis - ФОНОВЫЙ И ПО ЗАПРОСУ
 async function loadSystemAnalysis() {
     try {
+        console.log('🔧 Loading system analysis...');
+        
+        // Показываем загрузку только если модальное окно открыто
+        const statusElement = document.getElementById('systemStatus');
+        const modal = document.getElementById('systemAnalysisModal');
+        const isModalOpen = modal && modal.classList.contains('active');
+        
+        if (statusElement && isModalOpen) {
+            statusElement.innerHTML = '<div class="loading-spinner">Loading analysis...</div>';
+        }
+        
         const response = await fetch('/api/system-analysis', {
-            credentials: 'same-origin'  // Internal agent endpoint, no auth required
+            credentials: 'same-origin'
         });
         
         if (response.ok) {
             const data = await response.json();
+            console.log('📊 System analysis data:', data);
             
-            if (data.success && data.analysis) {
-                // If merged result present, prefer llm_analysis + live_analysis
+            // Обрабатываем новый формат ответа от IntegrationHub
+            if (data.system_status) {
+                // Прямой ответ от IntegrationHub
+                updateSystemPanel(data);
+            } else if (data.success && data.analysis) {
+                // Старый формат с merged result
                 const analysis = data.analysis.llm_analysis || data.analysis;
                 updateSystemPanel(analysis);
-                
-                
+            } else {
+                console.error('❌ Unexpected system analysis format:', data);
+                if (isModalOpen) {
+                    showSystemError('Unexpected response format');
+                }
             }
         } else {
-            console.log('System analysis not available or failed to load');
-            // Don't show error for internal agent endpoint
+            console.error('❌ System analysis failed:', response.status);
+            if (isModalOpen) {
+                showSystemError(`Analysis failed: ${response.status}`);
+            }
         }
     } catch (error) {
-        console.log('System analysis endpoint not available:', error);
-        // Don't show error for internal agent endpoint
+        console.error('❌ System analysis error:', error);
+        if (isModalOpen) {
+            showSystemError(`Connection error: ${error.message}`);
+        }
     }
 }
 
@@ -1319,28 +1342,64 @@ async function showModelStatus() {
 }
 
 function updateSystemPanel(analysis) {
+    console.log('🔧 Updating system panel with:', analysis);
+    
     // Update system status for desktop
     const statusElement = document.getElementById('systemStatus');
+    const modal = document.getElementById('systemAnalysisModal');
+    const isModalOpen = modal && modal.classList.contains('active');
     
-    if (statusElement && analysis.system_status) {
-        // Handle system_status as object with multiple fields
+    // Обновляем панель только если модальное окно открыто
+    if (statusElement && isModalOpen) {
         let statusHtml = '';
-        if (typeof analysis.system_status === 'object') {
-            // Format object fields
-            for (const [key, value] of Object.entries(analysis.system_status)) {
-                const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                statusHtml += `
-                    <div class="status-section">
-                        <h5>${formattedKey}:</h5>
-                        <p>${typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</p>
-                    </div>
-                `;
-            }
-        } else {
-            // Handle as string
-            statusHtml = `<div class="status-text">${analysis.system_status.replace(/\n/g, '<br>')}</div>`;
+        
+        // Обрабатываем новый формат от IntegrationHub
+        if (analysis.system_status) {
+            statusHtml += `<div class="status-section">
+                <h5>System Status:</h5>
+                <p>${analysis.system_status}</p>
+            </div>`;
         }
+        
+        if (analysis.actions_taken && analysis.actions_taken.length > 0) {
+            statusHtml += `<div class="status-section">
+                <h5>Actions Taken:</h5>
+                <ul>${analysis.actions_taken.map(action => `<li>${action}</li>`).join('')}</ul>
+            </div>`;
+        }
+        
+        if (analysis.insights && analysis.insights.length > 0) {
+            statusHtml += `<div class="status-section">
+                <h5>Insights:</h5>
+                <ul>${analysis.insights.map(insight => `<li>${insight}</li>`).join('')}</ul>
+            </div>`;
+        }
+        
+        if (analysis.recommendations && analysis.recommendations.length > 0) {
+            statusHtml += `<div class="status-section">
+                <h5>Recommendations:</h5>
+                <ul>${analysis.recommendations.map(rec => `<li>${rec}</li>`).join('')}</ul>
+            </div>`;
+        }
+        
+        if (analysis.notes_added && analysis.notes_added.length > 0) {
+            statusHtml += `<div class="status-section">
+                <h5>Notes Added:</h5>
+                <ul>${analysis.notes_added.map(note => `<li>${note}</li>`).join('')}</ul>
+            </div>`;
+        }
+        
+        // Если ничего не нашли, показываем как есть
+        if (!statusHtml) {
+            statusHtml = `<div class="status-text">${JSON.stringify(analysis, null, 2)}</div>`;
+        }
+        
         statusElement.innerHTML = statusHtml;
+        console.log('✅ System panel updated');
+    } else if (!isModalOpen) {
+        console.log('🔧 System panel update skipped - modal not open');
+    } else {
+        console.error('❌ System status element not found');
     }
 }
 
@@ -1352,8 +1411,8 @@ function showSystemError(message) {
     }
 }
 
-// Auto-refresh system analysis every 5 minutes
-setInterval(loadSystemAnalysis, 5 * 60 * 1000);
+// Auto-refresh system analysis every 5 minutes - ВОССТАНАВЛИВАЕМ!
+setInterval(loadSystemAnalysis, 5 * 60 * 1000); // Фоновый анализ каждые 5 минут
 
 // File upload functionality
 function initializeFileUpload() {

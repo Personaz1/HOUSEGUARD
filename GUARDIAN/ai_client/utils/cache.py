@@ -29,10 +29,17 @@ class SystemCache:
     
     def get_cache_key(self, operation: str, params: Dict[str, Any] = None) -> str:
         """Генерируем ключ кэша"""
+        import hashlib
+        
         key_parts = [operation]
         if params:
-            for k, v in sorted(params.items()):
-                key_parts.append(f"{k}={v}")
+            # Сортируем параметры для стабильности
+            sorted_params = sorted(params.items())
+            # Создаем короткий хеш от параметров
+            params_str = json.dumps(sorted_params, sort_keys=True)
+            params_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
+            key_parts.append(params_hash)
+        
         return "_".join(key_parts)
     
     def get(self, operation: str, params: Dict[str, Any] = None, ttl_seconds: int = 600) -> Optional[Dict[str, Any]]:

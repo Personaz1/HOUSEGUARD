@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     
     # Google Cloud Vision API Configuration
     GOOGLE_CLOUD_VISION_API_KEY: Optional[str] = None
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = None  # Path to service account key file
     
     # Database Configuration
     DATABASE_URL: str = "sqlite:///./family_guardian.db"

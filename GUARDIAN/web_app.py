@@ -28,10 +28,10 @@ from ai_client.utils.cache import system_cache
 load_dotenv()
 
 from ai_client.core.client import AIClient
-from ai_client.autonomous import IntegrationHub, SystemAnalysisAgent, AutonomousSupervisor, GuardianPolicy
+from ai_client.autonomous import SystemAnalysisAgent, AutonomousSupervisor, AutonomousCore, IntegrationHub
 from ai_client.tools.home_tools import HomeTools
 from ai_client.tools.vision_service import vision_service
-from ai_client.tools.vision_tools import vision_tools
+from ai_client.tools.vision_tools import VisionTools
 from ai_client.core.response_processor import ResponseProcessor
 from ai_client.tools.chat_summary_tools import ChatSummaryTools
 from memory.user_profiles import UserProfile
@@ -122,13 +122,21 @@ async def lifespan(app: FastAPI):
     
     # Startup
     try:
-        await integration_hub.start()
-        await autonomous_supervisor.start()
+        # Запускаем AGI IntegrationHub
+        integration_sync_task = asyncio.create_task(integration_hub.run_synchronization_loop())
+        
+        # Запускаем AGI AutonomousCore в фоне (не блокируем запуск сервера)
+        autonomous_core_task = asyncio.create_task(autonomous_core.start_autonomous_operation())
+        autonomous_supervisor_task = asyncio.create_task(autonomous_supervisor.start())
+        
         # Connect MQTT bridge (non-blocking, tolerate absence)
         mqtt_bridge.connect()
+        
         # Start SmartHouse SSE listener
         if _sse_task is None:
             _sse_task = asyncio.create_task(_consume_smarthouse_sse(SMARTHOUSE_BASE), name="smarthouse_sse")
+            
+        logger.info("🧠 AGI IntegrationHub: Started successfully")
     except Exception as e:
         logger.warning(f"Autonomous startup warning: {e}")
     
@@ -136,12 +144,21 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     try:
+        # Останавливаем автономные задачи
+        if 'autonomous_core_task' in locals():
+            autonomous_core_task.cancel()
+        if 'autonomous_supervisor_task' in locals():
+            autonomous_supervisor_task.cancel()
+        
+        await autonomous_core.stop_autonomous_operation()
         await autonomous_supervisor.stop()
-        await integration_hub.stop()
+        
         # Stop SSE task
         if _sse_task is not None:
             _sse_task.cancel()
             _sse_task = None
+            
+        logger.info("🧠 AGI AutonomousCore: Stopped")
     except Exception as e:
         logger.warning(f"Autonomous shutdown warning: {e}")
 
@@ -164,11 +181,21 @@ SESSION_SECRET = secrets.token_urlsafe(32)
 ai_client = AIClient()
 response_processor = ResponseProcessor(ai_client)
 chat_summary_tools = ChatSummaryTools()
-# Autonomous subsystems (background, no server control here)
+# AGI IntegrationHub - центр синхронизации
 integration_hub = IntegrationHub(ai_client)
+
+# Autonomous subsystems (background, no server control here)
 system_agent = SystemAnalysisAgent(ai_client)
-guardian_policy = GuardianPolicy()
-autonomous_supervisor = AutonomousSupervisor(integration_hub, system_agent, interval_seconds=180, policy=guardian_policy)
+autonomous_supervisor = AutonomousSupervisor(system_agent, interval_seconds=180)
+
+# AGI AutonomousCore - сердце системы
+autonomous_core = AutonomousCore(ai_client)
+
+# Регистрируем компоненты в IntegrationHub
+integration_hub.register_components(autonomous_core, system_agent)
+
+# Устанавливаем callback для уведомлений о завершении задач
+autonomous_core.set_task_completed_callback(integration_hub.on_autonomous_task_completed)
 
 # MQTT bridge for simulator controls
 mqtt_bridge = MqttBridge(host=os.getenv("MQTT_HOST", "localhost"), port=int(os.getenv("MQTT_PORT", "1883")), client_id="web_app")
@@ -584,6 +611,14 @@ async def chat_stream_endpoint(
             
             # Add to conversation history
             conversation_history.add_message(username, message, full_response)
+            
+            # СИНХРОНИЗИРУЕМ ЧАТ ЧЕРЕЗ IntegrationHub
+            try:
+                import time
+                await integration_hub.on_chat_message(username, message, full_response)
+                logger.info(f"🧠 IntegrationHub: Chat synchronized for user {username}")
+            except Exception as e:
+                logger.error(f"🧠 IntegrationHub: Error synchronizing chat: {e}")
             
             # Clear conversation history cache to force refresh
             cache_key = f"conversation_history_{username}_20"
@@ -1356,197 +1391,54 @@ async def clear_model_status_cache(request: Request):
 
 @app.get("/api/system-analysis")
 async def get_system_analysis(request: Request):
-    """Get system analysis - internal agent endpoint, no auth required"""
+    """Get system analysis - delegated to IntegrationHub"""
     
     try:
         # Get current user if available, but don't require it
         username = get_current_user(request)
         
-        # Проверяем кэш (но с более коротким TTL для тестирования)
+        # Проверяем кэш
         cache_params = {"username": username, "has_user": bool(username)}
-        cached_result = system_cache.get("system_analysis", cache_params, ttl_seconds=60)  # 1 минута для тестирования
+        cached_result = system_cache.get("system_analysis", cache_params, ttl_seconds=600)  # 10 минут
         
         if cached_result:
             logger.info("✅ SYSTEM ANALYSIS: Returning cached result")
             return JSONResponse(content=cached_result)
         
-        # Если кэша нет, начинаем анализ
-        logger.info("🔧 SYSTEM ANALYSIS: Starting fresh analysis...")
+        # Если кэша нет, запрашиваем анализ у IntegrationHub
+        logger.info("🔧 SYSTEM ANALYSIS: Requesting analysis from IntegrationHub...")
         
-        if username:
-            # If user is authenticated, get their profile and context
-            user_profile = UserProfile(username)
-            profile_data = user_profile.get_profile()
+        if integration_hub and integration_hub.system_agent:
+            # Запускаем анализ через IntegrationHub
+            context = await integration_hub.get_synchronized_context()
+            analysis_result = await integration_hub.system_agent.synthesize_with_autonomous_context(context)
             
-            # Get conversation history
-            recent_messages = conversation_history.get_recent_history(limit=666)
+            # Кэшируем результат
+            system_cache.set("system_analysis", cache_params, analysis_result, ttl_seconds=600)
             
-
-            
-
-            
-
-            
-            # Build context for LLM - ПОЛНЫЕ ДАННЫЕ ДЛЯ АНАЛИЗА
-            context = f"""
-User Profile:
-- Name: {profile_data.get('full_name', username)}
-
-- Bio: {profile_data.get('profile', 'N/A')}
-
-
-
-Recent Conversation ({len(recent_messages)} messages):
-{chr(10).join([f"- {msg.get('message', 'N/A')}" for msg in recent_messages]) if recent_messages else "No recent messages"}
-
-
-
-
-"""
+            logger.info("✅ SYSTEM ANALYSIS: Analysis completed via IntegrationHub")
+            return JSONResponse(content=analysis_result)
         else:
-            # If no user authenticated, provide basic system analysis
-            context = """
-System Status:
-- No authenticated user
-- Basic system analysis mode
-- Guardian AI is operational
-- All core functions available
-"""
-
-        
-        # Get SmartHouse snapshot and recent events
-        try:
-            smarthouse_state = home_tools.get_state()
-        except Exception:
-            smarthouse_state = {"error": "unavailable"}
-        recent_events = list(_smarthouse_events)[-20:]
-
-        # Get recent file changes and system status + vision status
-        recent_changes = get_recent_file_changes()
-        system_health = ai_client.system.diagnose_system_health()
-        vision_status = vision_tools.get_camera_status("default")
-        
-        # Generate system analysis using AI с дополнительным промптом
-        additional_prompt = """Это мини модуль системного анализатора - как общее положение из контекста датчиков (если подключены) и памяти?
-
-**YOUR MISSION:**
-1. **ANALYZE** the conversation history and user context
-2. **IDENTIFY** important events, patterns, and insights
-3. **TAKE ACTION** - create notes, update profiles
-4. **RESPOND** with your analysis and actions taken
-
-**LOOK FOR:**
-- System issues or improvements needed
-- User preferences and needs
-
-**ACT AUTONOMOUSLY** - don't just analyze, CREATE and UPDATE based on what you discover.
-
-Provide your response in this JSON format:
-{{
-  "system_status": "Your analysis of current state",
-  "actions_taken": ["List of actions you performed"],
-  "insights": ["Key insights discovered"],
-  "recommendations": ["Suggestions for users"],
-
-  "notes_added": ["System notes you created"]
-}}"""
-
-        # Log system analysis start
-        logger.info("🔧 SYSTEM ANALYSIS: Starting autonomous analysis...")
-        logger.info(f"🔧 SYSTEM ANALYSIS: User context available: {bool(username)}")
-        logger.info(f"🔧 SYSTEM ANALYSIS: Recent changes: {len(recent_changes.split())} words")
-        logger.info(f"🔧 SYSTEM ANALYSIS: System health: {len(system_health.split())} words")
-        
-        # Детальное логирование для отладки
-        try:
-            if username:
-                logger.info(f"🔧 SYSTEM ANALYSIS: recent_messages type: {type(recent_messages)}")
-
-            else:
-                logger.info("🔧 SYSTEM ANALYSIS: No user context available")
-        except NameError:
-            logger.info("🔧 SYSTEM ANALYSIS: Variables not initialized (no user context)")
-        except Exception as e:
-            logger.error(f"🔧 SYSTEM ANALYSIS: Error in debug logging: {e}")
-
-        # Generate analysis
-        analysis_message = f"""Analyze the system and take autonomous actions based on this context:
-
-User Context: {context}
-Recent Changes: {recent_changes[:500]}
-System Health: {system_health[:500]}
-Vision Status: {vision_status[:500]}
-SmartHouse Snapshot (truncated): {json.dumps(smarthouse_state)[:800]}
-Recent House Events: {json.dumps(recent_events)[:800]}"""
-
-        analysis_response = ai_client.chat(
-            message=analysis_message,
-            user_profile=profile_data if username else {},
-            conversation_context=context,
-            additional_prompt=additional_prompt
-        )
-
-        # Log system analysis completion
-        logger.info(f"✅ SYSTEM ANALYSIS: Completed - {len(analysis_response.split())} words generated")
-        logger.info(f"✅ SYSTEM ANALYSIS: Response preview: {analysis_response[:100]}...")
-        
-        # Try to parse JSON response - УЛУЧШЕННАЯ ОБРАБОТКА
-        try:
-            import re
-            # Extract JSON from response - более точный поиск
-            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', analysis_response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group()
-                # Очищаем JSON от лишних символов
-                json_str = re.sub(r'[^\x20-\x7E]', '', json_str)  # Убираем непечатаемые символы
-                analysis_data = json.loads(json_str)
-                logger.info("✅ SYSTEM ANALYSIS: JSON parsed successfully")
-            else:
-                # Fallback if no JSON found
-                logger.warning("⚠️ SYSTEM ANALYSIS: No JSON found in response")
-                analysis_data = {
-                    "system_status": analysis_response,
-                    "status": analysis_response,
-                    "capabilities": "System is operational"
-                }
-        except json.JSONDecodeError as e:
-            # Fallback if JSON parsing fails
-            logger.error(f"❌ SYSTEM ANALYSIS: JSON parsing failed: {e}")
-            analysis_data = {
-                "system_status": analysis_response,
-                "status": analysis_response,
-                "capabilities": "System is operational"
+            # Fallback если IntegrationHub недоступен
+            logger.warning("⚠️ SYSTEM ANALYSIS: IntegrationHub not available, using fallback")
+            fallback_result = {
+                "system_status": "System analysis unavailable - IntegrationHub not initialized",
+                "actions_taken": [],
+                "insights": ["System is operational but analysis service is down"],
+                "recommendations": ["Check IntegrationHub status"],
+                "notes_added": []
             }
-        except Exception as e:
-            # General fallback
-            logger.error(f"❌ SYSTEM ANALYSIS: General parsing error: {e}")
-            analysis_data = {
-                "system_status": "System analysis completed",
-                "status": "System analysis completed",
-                "capabilities": "System is operational"
-            }
-        
-        # Сохраняем в кэш только если нет ошибок
-        if "❌ Error: 429" not in analysis_response and "❌ Error:" not in analysis_response:
-            system_cache.set("system_analysis", analysis_data, cache_params, ttl_seconds=600)
-            logger.info("💾 SYSTEM ANALYSIS: Result cached for 10 minutes")
-        else:
-            logger.warning("⚠️ SYSTEM ANALYSIS: Not caching error response")
-            # Инвалидируем кэш при ошибках
-            system_cache.invalidate("system_analysis", cache_params)
-        
-        # Merge on-demand LLM analysis with live background snapshot
-        try:
-            from ai_client.autonomous import SystemAnalysisAgent  # local import to avoid top-cycle
-            # use already initialized system_agent if available
-            live = globals().get("system_agent").get_last() if globals().get("system_agent") else None
-        except Exception:
-            live = None
-
-        merged = {"llm_analysis": analysis_data, "live_analysis": live or {}}
-        return JSONResponse({"success": True, "analysis": merged, "timestamp": datetime.now().isoformat()})
+            return JSONResponse(content=fallback_result)
         
     except Exception as e:
+        logger.error(f"❌ SYSTEM ANALYSIS: Error: {e}")
+        return JSONResponse(content={
+            "system_status": f"System analysis error: {str(e)}",
+            "actions_taken": [],
+            "insights": ["System analysis failed"],
+            "recommendations": ["Check system logs"],
+            "notes_added": []
+        })
         logger.error(f"❌ System analysis error: {e}")
         
         # Пробуем вернуть кэшированный результат при ошибке
@@ -1862,6 +1754,26 @@ async def archive_conversation(request: Request):
             "error": str(e)
         }, status_code=500)
 
+@app.get("/api/autonomous-status")
+async def get_autonomous_status(request: Request):
+    """Get AGI autonomous operation status"""
+    try:
+        status = await autonomous_core.get_autonomous_status()
+        return {"success": True, "status": status}
+    except Exception as e:
+        logger.error(f"Error getting autonomous status: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/integration-status")
+async def get_integration_status(request: Request):
+    """Get AGI integration hub status"""
+    try:
+        status = await integration_hub.get_synchronization_status()
+        return {"success": True, "status": status}
+    except Exception as e:
+        logger.error(f"Error getting integration status: {e}")
+        return {"success": False, "error": str(e)}
+
 @app.get("/api/image-analyzer/status")
 async def get_image_analyzer_status(request: Request):
     """Get image analyzer status"""
@@ -2015,7 +1927,7 @@ async def api_home_control_light(request: Request):
 async def list_cameras(request: Request):
     """Get list of available cameras"""
     try:
-        from ai_client.tools.vision_tools import vision_tools
+        vision_tools = VisionTools()
         result = vision_tools.list_cameras()
         return {"success": True, "result": result}
     except Exception as e:
@@ -2026,7 +1938,7 @@ async def list_cameras(request: Request):
 async def get_camera_status(request: Request, camera_id: str):
     """Get status of specific camera"""
     try:
-        from ai_client.tools.vision_tools import vision_tools
+        vision_tools = VisionTools()
         result = vision_tools.get_camera_status(camera_id)
         return {"success": True, "result": result}
     except Exception as e:
@@ -2040,7 +1952,7 @@ async def capture_image(request: Request):
         data = await request.json()
         camera_id = data.get('camera_id', 'default')
         
-        from ai_client.tools.vision_tools import vision_tools
+        vision_tools = VisionTools()
         result = vision_tools.capture_image(camera_id)
         return {"success": True, "result": result}
     except Exception as e:
@@ -2057,7 +1969,7 @@ async def analyze_image(request: Request):
         if not image_path:
             return {"success": False, "error": "Image path is required"}
         
-        from ai_client.tools.vision_tools import vision_tools
+        vision_tools = VisionTools()
         result = vision_tools.analyze_image(image_path)
         return {"success": True, "result": result}
     except Exception as e:
@@ -2072,7 +1984,7 @@ async def detect_motion(request: Request):
         camera_id = data.get('camera_id', 'default')
         threshold = data.get('threshold', 25.0)
         
-        from ai_client.tools.vision_tools import vision_tools
+        vision_tools = VisionTools()
         result = vision_tools.detect_motion(camera_id, threshold)
         return {"success": True, "result": result}
     except Exception as e:

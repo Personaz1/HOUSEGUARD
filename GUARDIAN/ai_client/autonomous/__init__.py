@@ -1,18 +1,22 @@
 """
-Autonomous subsystem for ΔΣ Guardian
-Background supervision, integration hub, and live system analysis agent.
+🧠 Autonomous Module - AGI автономные компоненты
 """
 
-from .integration_hub import IntegrationHub
+from .core import AutonomousCore, AutonomousMemory, ContextAnalyzer, AutonomousTask, AutonomousContext
 from .system_analysis_agent import SystemAnalysisAgent
 from .background_loop import AutonomousSupervisor
-from .guardian_policy import GuardianPolicy
+from .integration_hub import IntegrationHub, SystemEvent
 
 __all__ = [
-    "IntegrationHub",
-    "SystemAnalysisAgent",
-    "AutonomousSupervisor",
-    "GuardianPolicy",
+    'AutonomousCore',
+    'AutonomousMemory', 
+    'ContextAnalyzer',
+    'AutonomousTask',
+    'AutonomousContext',
+    'SystemAnalysisAgent',
+    'AutonomousSupervisor',
+    'IntegrationHub',
+    'SystemEvent'
 ]
 
 

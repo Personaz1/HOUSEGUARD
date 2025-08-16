@@ -174,8 +174,12 @@
             <div class="panel-content">
                 <div class="analysis-section">
                     <h4>Current Status</h4>
+                    <div class="analysis-controls">
+                        <button class="refresh-btn" onclick="loadSystemAnalysis()">🔄 Refresh</button>
+                        <button class="refresh-btn" onclick="forceRefreshSystemAnalysis()">⚡ Force Refresh</button>
+                    </div>
                     <div class="status-content" id="systemStatus">
-                        <div class="loading-spinner">Loading analysis...</div>
+                        <div class="loading-spinner">Click "Refresh" to load analysis</div>
                     </div>
                 </div>
             </div>

@@ -7,22 +7,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Optional, Dict, Any
 
-from .integration_hub import IntegrationHub
 from .system_analysis_agent import SystemAnalysisAgent
-from .guardian_policy import GuardianPolicy
 
 
 logger = logging.getLogger(__name__)
 
 
 class AutonomousSupervisor:
-    def __init__(self, hub: IntegrationHub, agent: SystemAnalysisAgent, interval_seconds: int = 120, policy: Optional[GuardianPolicy] = None) -> None:
-        self.hub = hub
+    def __init__(self, agent: SystemAnalysisAgent, interval_seconds: int = 120) -> None:
         self.agent = agent
         self.interval_seconds = interval_seconds
-        self.policy = policy or GuardianPolicy()
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
 
@@ -45,9 +42,12 @@ class AutonomousSupervisor:
     async def _run_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
-                snapshot = self.hub.get_status_snapshot()
-                # Apply policy to recent alerts or sensor states (simple MVP: no history yet)
-                # We can scan sensor stats for anomalies and trigger policy-driven actions later.
+                # Простой статус для SystemAnalysisAgent
+                snapshot = {
+                    "timestamp": time.time(),
+                    "system_status": "running",
+                    "autonomous_core": "active"
+                }
                 await self.agent.synthesize(snapshot)
             except Exception as e:
                 logger.error(f"AutonomousSupervisor loop error: {e}")

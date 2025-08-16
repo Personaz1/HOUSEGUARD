@@ -24,7 +24,18 @@ class VisionTools:
     Инструменты для компьютерного зрения
     """
     
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(VisionTools, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
         """Инициализация Vision Tools"""
         self.cameras = {}  # Словарь активных камер
         self.last_frames = {}  # Последние кадры с камер
@@ -39,9 +50,23 @@ class VisionTools:
         except Exception as e:
             self.logger.error(f"❌ Vision Tools: OpenCV initialization failed - {e}")
 
-        # Google Cloud Vision SDK отключен - используем только Gemini Vision
+        # Инициализация Google Cloud Vision API (опционально)
         self._gcv_client = None
-        self.logger.info("✅ Google Cloud Vision SDK disabled - using Gemini Vision only")
+        self._gcv_enabled = False
+        
+        # Проверяем доступность Google Cloud Vision API
+        try:
+            from ..utils.config import Config
+            config = Config()
+            if config.get_vision_api_key():
+                # Здесь можно инициализировать Google Cloud Vision SDK
+                # self._gcv_client = vision.ImageAnnotatorClient()
+                self._gcv_enabled = True
+                self.logger.info("✅ Google Cloud Vision API enabled - available for deep analysis")
+            else:
+                self.logger.info("⚠️ Google Cloud Vision API key not configured - using Gemini Vision only")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Google Cloud Vision API initialization failed: {e} - using Gemini Vision only")
     
     def capture_image(self, camera_id: str = "default", auto_analyze: bool = True) -> str:
         """
@@ -143,12 +168,20 @@ class VisionTools:
         except Exception as e:
             self.logger.warning(f"⚠️ Ошибка при очистке старых фоток: {e}")
     
-    def analyze_image(self, image_path: str) -> str:
+    def analyze_image(self, image_path: str, strategy: str = "auto") -> str:
         """
-        Глубокий анализ изображения:
-        - Базовые метрики (OpenCV)
-        - Google Vision API (labels/text/faces/objects) — если настроен ключ
-        - LLM-анализ (Gemini Vision) — при доступности квоты
+        Глубокий анализ изображения с выбором стратегии:
+        
+        Args:
+            image_path: Путь к изображению
+            strategy: Стратегия анализа ("auto", "basic_only", "google_vision", "gemini_only", "full_stack")
+        
+        Стратегии:
+        - "auto": Автоматический выбор (Google Vision + Gemini fallback)
+        - "basic_only": Только базовые метрики OpenCV
+        - "google_vision": Google Cloud Vision API + базовые метрики
+        - "gemini_only": Только Gemini Vision
+        - "full_stack": Все доступные методы
         """
         try:
             if not os.path.exists(image_path):
@@ -158,6 +191,26 @@ class VisionTools:
             image = cv2.imread(image_path)
             if image is None:
                 return f"❌ Ошибка: Не удалось загрузить изображение {image_path}"
+
+            # Определяем стратегию анализа
+            use_google_vision = False
+            use_gemini = False
+            
+            if strategy == "basic_only":
+                use_google_vision = False
+                use_gemini = False
+            elif strategy == "google_vision":
+                use_google_vision = True
+                use_gemini = False
+            elif strategy == "gemini_only":
+                use_google_vision = False
+                use_gemini = True
+            elif strategy == "full_stack":
+                use_google_vision = True
+                use_gemini = True
+            else:  # "auto" - автоматический выбор
+                use_google_vision = self._gcv_enabled
+                use_gemini = True  # Gemini как fallback
 
             # Базовые метрики
             height, width = image.shape[:2]
@@ -187,78 +240,45 @@ class VisionTools:
                 "timestamp": datetime.now().isoformat()
             }
 
-            # Google Vision API (опционально)
+            # Google Vision API (опционально) - используем настроенную стратегию
             gv_summary = None
-            try:
-                api_key = os.getenv('GOOGLE_CLOUD_VISION_API_KEY')
-                if api_key:
-                    with open(image_path, 'rb') as f:
-                        content_b64 = base64.b64encode(f.read()).decode('utf-8')
-                    url = f"https://vision.googleapis.com/v1/images:annotate?key={api_key}"
-                    request_data = {
-                        "requests": [
-                            {
-                                "image": {"content": content_b64},
-                                "features": [
-                                    {"type": "LABEL_DETECTION", "maxResults": 10},
-                                    {"type": "TEXT_DETECTION"},
-                                    {"type": "FACE_DETECTION"},
-                                    {"type": "OBJECT_LOCALIZATION", "maxResults": 10}
-                                ]
-                            }
-                        ]
-                    }
-                    resp = requests.post(url, json=request_data, timeout=20)
-                    if resp.status_code == 200:
-                        data = resp.json().get('responses', [{}])[0]
-                        labels = [x['description'] for x in data.get('labelAnnotations', [])]
-                        objects = [x['name'] for x in data.get('localizedObjectAnnotations', [])]
-                        text = data.get('textAnnotations', [{}])[0].get('description', '').strip() if data.get('textAnnotations') else ''
-                        faces = len(data.get('faceAnnotations', [])) if data.get('faceAnnotations') else 0
-                        gv_summary = {
-                            "labels": labels[:10],
-                            "objects": objects[:10],
-                            "text_sample": text[:200],
-                            "faces_detected": faces
-                        }
-                    else:
-                        gv_summary = {"error": f"Vision API status {resp.status_code}"}
-            except Exception as e:
-                gv_summary = {"error": f"Vision API error: {e}"}
+            if use_google_vision:
+                gv_summary = self._analyze_with_google_vision(image_path)
 
             # LLM-анализ через Gemini Vision (опционально)
             llm_summary = None
-            try:
-                from ..models.gemini_client import GeminiClient
-                gemini = GeminiClient()
-                # Граундим LLM фактами из GV и базовых метрик и используем Files API-путь
-                gv_for_prompt = {
-                    'labels': (gv_summary or {}).get('labels') if isinstance(gv_summary, dict) else None,
-                    'objects': (gv_summary or {}).get('objects') if isinstance(gv_summary, dict) else None,
-                    'faces_detected': (gv_summary or {}).get('faces_detected') if isinstance(gv_summary, dict) else None,
-                    'text_sample': (gv_summary or {}).get('text_sample') if isinstance(gv_summary, dict) else None,
-                }
-                prompt_text = (
-                    "Опиши изображение кратко и по фактам.; "
-                    "1) опирайся на само изображение; 2) если не уверен — 'unknown'; 3) 5-8 пунктов, без воды.\n"
-                    f"Детекторы: dimensions={basic['dimensions']}, faces={gv_for_prompt.get('faces_detected')}, "
-                    f"labels={gv_for_prompt.get('labels')}, objects={gv_for_prompt.get('objects')}, text_sample={(gv_for_prompt.get('text_sample') or '')[:120]}"
-                )
-                llm_text = gemini.analyze_image_with_files_api(
-                    image_path=image_path,
-                    prompt_text=prompt_text,
-                    preferred_model="gemini-1.5-pro"
-                )
-                # Фильтрация бесполезных дисклеймеров
-                bad_markers = [
-                    'text-based AI', 'cannot directly view', 'cannot see images',
-                    'hypothetical', 'I do not have the ability to view images'
-                ]
-                if any(m.lower() in (llm_text or '').lower() for m in bad_markers):
-                    llm_text = None
-                llm_summary = llm_text
-            except Exception as e:
-                llm_summary = f"Gemini analysis unavailable: {e}"
+            if use_gemini:
+                try:
+                    from ..models.gemini_client import GeminiClient
+                    gemini = GeminiClient()
+                    # Граундим LLM фактами из GV и базовых метрик и используем Files API-путь
+                    gv_for_prompt = {
+                        'labels': (gv_summary or {}).get('labels') if isinstance(gv_summary, dict) else None,
+                        'objects': (gv_summary or {}).get('objects') if isinstance(gv_summary, dict) else None,
+                        'faces_detected': (gv_summary or {}).get('faces_detected') if isinstance(gv_summary, dict) else None,
+                        'text_sample': (gv_summary or {}).get('text_sample') if isinstance(gv_summary, dict) else None,
+                    }
+                    prompt_text = (
+                        "Опиши изображение кратко и по фактам.; "
+                        "1) опирайся на само изображение; 2) если не уверен — 'unknown'; 3) 5-8 пунктов, без воды.\n"
+                        f"Детекторы: dimensions={basic['dimensions']}, faces={gv_for_prompt.get('faces_detected')}, "
+                        f"labels={gv_for_prompt.get('labels')}, objects={gv_for_prompt.get('objects')}, text_sample={(gv_for_prompt.get('text_sample') or '')[:120]}"
+                    )
+                    llm_text = gemini.analyze_image_with_files_api(
+                        image_path=image_path,
+                        prompt_text=prompt_text,
+                        preferred_model="gemini-1.5-pro"
+                    )
+                    # Фильтрация бесполезных дисклеймеров
+                    bad_markers = [
+                        'text-based AI', 'cannot directly view', 'cannot see images',
+                        'hypothetical', 'I do not have the ability to view images'
+                    ]
+                    if any(m.lower() in (llm_text or '').lower() for m in bad_markers):
+                        llm_text = None
+                    llm_summary = llm_text
+                except Exception as e:
+                    llm_summary = f"Gemini analysis unavailable: {e}"
 
             result = {
                 "basic": basic,
@@ -517,5 +537,117 @@ class VisionTools:
         except Exception as e:
             return f"❌ GV OCR error: {e}"
 
-# Создаем экземпляр для использования
-vision_tools = VisionTools() 
+    def _analyze_with_google_vision(self, image_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Анализ изображения через Google Cloud Vision API с fallback стратегией
+        
+        Args:
+            image_path: Путь к изображению
+            
+        Returns:
+            Dict с результатами анализа или None при ошибке
+        """
+        # Проверяем доступность Google Cloud Vision API
+        if not self._gcv_enabled:
+            try:
+                from ..utils.config import Config
+                config = Config()
+                if config.get_vision_api_key():
+                    self._gcv_enabled = True
+                else:
+                    return None
+            except Exception:
+                return None
+        
+        try:
+            # Используем REST API Google Cloud Vision
+            from ..utils.config import Config
+            config = Config()
+            api_key = config.get_vision_api_key()
+            if not api_key:
+                return None
+                
+            with open(image_path, 'rb') as f:
+                content_b64 = base64.b64encode(f.read()).decode('utf-8')
+            
+            url = f"https://vision.googleapis.com/v1/images:annotate?key={api_key}"
+            request_data = {
+                "requests": [
+                    {
+                        "image": {"content": content_b64},
+                        "features": [
+                            {"type": "LABEL_DETECTION", "maxResults": 10},
+                            {"type": "TEXT_DETECTION"},
+                            {"type": "FACE_DETECTION"},
+                            {"type": "OBJECT_LOCALIZATION", "maxResults": 10}
+                        ]
+                    }
+                ]
+            }
+            
+            resp = requests.post(url, json=request_data, timeout=20)
+            if resp.status_code == 200:
+                data = resp.json().get('responses', [{}])[0]
+                labels = [x['description'] for x in data.get('labelAnnotations', [])]
+                objects = [x['name'] for x in data.get('localizedObjectAnnotations', [])]
+                text = data.get('textAnnotations', [{}])[0].get('description', '').strip() if data.get('textAnnotations') else ''
+                faces = len(data.get('faceAnnotations', [])) if data.get('faceAnnotations') else 0
+                
+                return {
+                    "labels": labels[:10],
+                    "objects": objects[:10],
+                    "text_sample": text[:200],
+                    "faces_detected": faces,
+                    "api_used": "google_cloud_vision_rest"
+                }
+            else:
+                self.logger.warning(f"⚠️ Google Vision API error: status {resp.status_code}")
+                return {"error": f"Vision API status {resp.status_code}"}
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Google Vision API analysis failed: {e}")
+            return {"error": f"Vision API error: {e}"}
+
+    def get_analysis_strategies(self) -> Dict[str, Any]:
+        """
+        Получить информацию о доступных стратегиях анализа
+        
+        Returns:
+            Dict с информацией о стратегиях и их доступности
+        """
+        strategies = {
+            "basic_only": {
+                "description": "Только базовые метрики OpenCV",
+                "available": True,
+                "features": ["dimensions", "brightness", "contrast", "sharpness", "color_analysis"]
+            },
+            "google_vision": {
+                "description": "Google Cloud Vision API + базовые метрики",
+                "available": self._gcv_enabled,
+                "features": ["labels", "objects", "text_detection", "face_detection", "basic_metrics"]
+            },
+            "gemini_only": {
+                "description": "Только Gemini Vision",
+                "available": True,
+                "features": ["llm_analysis", "contextual_understanding"]
+            },
+            "full_stack": {
+                "description": "Все доступные методы",
+                "available": True,
+                "features": ["basic_metrics", "google_vision", "gemini_vision"]
+            },
+            "auto": {
+                "description": "Автоматический выбор (Google Vision + Gemini fallback)",
+                "available": True,
+                "features": ["smart_fallback", "optimal_performance"]
+            }
+        }
+        
+        return {
+            "strategies": strategies,
+            "google_vision_enabled": self._gcv_enabled,
+            "recommended": "auto" if self._gcv_enabled else "gemini_only"
+        }
+
+# VisionTools теперь использует синглтон паттерн
+# Экземпляр создается автоматически при первом обращении 

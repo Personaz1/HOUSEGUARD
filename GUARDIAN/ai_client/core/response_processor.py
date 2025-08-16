@@ -99,9 +99,26 @@ class ToolExtractor:
                 
                 # Если есть второй аргумент
                 if remaining.startswith('"'):
-                    # Берем все что осталось как контент
-                    content = remaining[1:]  # Убираем первую кавычку
-                    arguments["arg_1"] = content
+                    # Ищем закрывающую кавычку для контента
+                    content_start = 1  # Пропускаем открывающую кавычку
+                    content_end = -1
+                    
+                    # Ищем закрывающую кавычку, учитывая экранирование
+                    i = content_start
+                    while i < len(remaining):
+                        if remaining[i] == '"' and (i == 0 or remaining[i-1] != '\\'):
+                            content_end = i
+                            break
+                        i += 1
+                    
+                    if content_end != -1:
+                        # Нашли закрывающую кавычку
+                        content = remaining[content_start:content_end]
+                        arguments["arg_1"] = content
+                    else:
+                        # Не нашли закрывающую кавычку - берем все до конца
+                        content = remaining[content_start:]
+                        arguments["arg_1"] = content
                 else:
                     # Если нет кавычки, берем все что осталось
                     arguments["arg_1"] = remaining
