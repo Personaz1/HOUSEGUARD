@@ -119,6 +119,7 @@ class ToolExecutor:
         try:
             function_name = tool_call.function_name
             arguments = tool_call.arguments
+            logger.info(f"🔧 EXECUTE_TOOL: Starting execution of {function_name} with args: {arguments}")
             
             # Определяем целевой набор инструментов по имени функции
             # По умолчанию используем системные инструменты
@@ -150,14 +151,18 @@ class ToolExecutor:
                 
                 # Вызываем функцию с аргументами
                 if function_name in ['create_file', 'append_to_file']:
+                    logger.info(f"🔧 EXECUTE_TOOL: Processing {function_name}")
                     # Для файловых операций
                     file_path = arguments.get('arg_0', '')
                     content = arguments.get('arg_1', '')
+                    logger.info(f"🔧 EXECUTE_TOOL: file_path={file_path}, content_length={len(content)}")
                     
                     if function_name == 'create_file':
                         result = func(file_path, content)
+                        logger.info(f"🔧 EXECUTE_TOOL: create_file result: {result}")
                     else:  # append_to_file
                         result = func(file_path, content)
+                        logger.info(f"🔧 EXECUTE_TOOL: append_to_file result: {result}")
                     
                     return {
                         'success': True,
@@ -392,11 +397,14 @@ class ResponseProcessor:
         """Обрабатывает полный ответ"""
         # Извлекаем tool calls
         tool_calls = self.tool_extractor.extract_tool_calls(text)
+        logger.info(f"🔧 PROCESS_COMPLETE: Found {len(tool_calls)} tool calls")
         
         # Выполняем tool calls
         tool_results = []
         for tool_call in tool_calls:
+            logger.info(f"🔧 PROCESS_COMPLETE: Executing tool call: {tool_call.function_name}")
             result = self.tool_executor.execute_tool_call(tool_call, context)
+            logger.info(f"🔧 PROCESS_COMPLETE: Tool call result: {result}")
             tool_results.append(result)
         
         # Форматируем ответ
@@ -410,33 +418,20 @@ class ResponseProcessor:
         )
     
     async def process_streaming_response(self, text_stream):
-        """Обрабатывает стриминг ответ"""
-        full_text = ""
+        """Обрабатывает стриминг ответ - как у меня"""
         async for chunk in text_stream:
-            full_text += chunk
             yield chunk
         
-        # После получения полного ответа обрабатываем tool calls
-        if full_text:
-            processed = await self.process_complete_response(full_text)
-            if processed.tool_calls:
-                # Отправляем результаты выполнения
-                for result in processed.tool_results:
-                    if result.get('success'):
-                        yield f"\n\n✅ {result.get('result', '')}"
-                    else:
-                        yield f"\n\n❌ Error: {result.get('error', '')}"
+        # После завершения стриминга обрабатываем tool calls
+        # Это делается в web_app.py в chat_stream_endpoint
     
     def _clean_ai_internal_code(self, text: str) -> str:
-        """Очищает внутренний код AI из ответа"""
+        """Очищает внутренний код AI из ответа - ОТКЛЮЧЕНО для tool_code"""
         # Убираем python блоки
         text = re.sub(r'```python\s*\n.*?\n```', '', text, flags=re.DOTALL)
-        # Убираем tool_code блоки
-        text = re.sub(r'```tool_code\s*\n.*?\n```', '', text, flags=re.DOTALL)
-        # Убираем строки, начинающиеся с 'tool_code' и следующий JSON/вставку кода до пустой строки
-        text = re.sub(r'^tool_code\n[\s\S]*?(?:\n\s*\n|$)', '', text, flags=re.MULTILINE)
+        # НЕ убираем tool_code блоки - они обрабатываются в system_tools.py
         # Убираем одиночные python
         text = re.sub(r'^python\s*$', '', text, flags=re.MULTILINE)
-        # Убираем лишние тройные бектики без языка
-        text = re.sub(r'```\s*\n[\s\S]*?\n```', '', text, flags=re.DOTALL)
+        # Убираем лишние тройные бектики без языка (но не tool_code)
+        text = re.sub(r'```(?!tool_code)\s*\n[\s\S]*?\n```', '', text, flags=re.DOTALL)
         return text.strip() 

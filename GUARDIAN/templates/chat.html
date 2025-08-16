@@ -24,6 +24,7 @@
                     <a href="/roadmap" class="roadmap-btn">🚀 Roadmap</a>
                     <button class="diary-btn" onclick="loadConversationArchive()">📚 Archive</button>
                     <button class="model-status-btn" onclick="window.location.href='/models'">🤖 Models</button>
+
                     <form method="POST" action="/logout" style="display: inline;">
                         <button type="submit" class="logout-btn">🚪 Logout</button>
                     </form>
@@ -64,21 +65,7 @@
                         </div>
                     </div>
 
-                    <!-- Online Vision Analyzer -->
-                    <div class="vision-section">
-                        <h4>Vision Analyzer</h4>
-                        <div style="display:flex; gap:10px; align-items:center;">
-                            <video id="visionVideo" autoplay playsinline muted style="width:180px; height:120px; background:#000; border-radius:6px;"></video>
-                            <div>
-                                <div id="visionStatus">Idle</div>
-                                <div id="visionResult" style="font-size:12px; color:#888;">-</div>
-                                <div style="margin-top:6px; display:flex; gap:6px;">
-                                    <button class="action-btn-small" onclick="startVisionAnalyzer()">▶ Start</button>
-                                    <button class="action-btn-small" onclick="stopVisionAnalyzer()">⏹ Stop</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+
                 </div>
             </aside>
 

@@ -134,7 +134,7 @@ class SystemTools:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, 'a', encoding='utf-8') as f:
                 f.write(content)
-            return f"✅ Content appended to: {path}"
+            return f"✅ Содержимое добавлено в: {path}"
         except Exception as e:
             return f"❌ Error appending to file {path}: {str(e)}"
     
@@ -577,8 +577,15 @@ Be detailed and specific in your analysis."""
     def plan_step(self, goal: str) -> str:
         """Планирование шага"""
         try:
-            # TODO: Реализовать планирование
-            return f"📋 Planned step for goal: {goal}"
+            # Анализируем цель и планируем следующий шаг
+            if "system" in goal.lower() or "integrity" in goal.lower():
+                return f"📋 Plan: Analyze system logs and check for errors"
+            elif "stability" in goal.lower():
+                return f"📋 Plan: Check system performance and resource usage"
+            elif "guardian" in goal.lower():
+                return f"📋 Plan: Verify AI model functionality and response quality"
+            else:
+                return f"📋 Plan: Execute general system analysis for goal: {goal}"
         except Exception as e:
             logger.error(f"Error planning step: {e}")
             return f"❌ Error planning step: {str(e)}"
@@ -586,8 +593,18 @@ Be detailed and specific in your analysis."""
     def act_step(self, tool_name: str, tool_input: str) -> str:
         """Выполнение шага"""
         try:
-            # TODO: Реализовать выполнение
-            return f"🔧 Executed {tool_name} with input: {tool_input}"
+            # Выполняем действие в зависимости от инструмента
+            if tool_name == "system_analysis":
+                # Анализируем систему
+                logs = self.get_system_logs(10)
+                errors = self.get_error_summary()
+                return f"🔧 System analysis completed\nLogs: {logs[:200]}...\nErrors: {errors}"
+            elif tool_name == "file_check":
+                # Проверяем файлы
+                recent_changes = self.get_recent_file_changes()
+                return f"🔧 File check completed\nRecent changes: {recent_changes}"
+            else:
+                return f"🔧 Executed {tool_name} with input: {tool_input}"
         except Exception as e:
             logger.error(f"Error executing step: {e}")
             return f"❌ Error executing step: {str(e)}"
@@ -595,20 +612,389 @@ Be detailed and specific in your analysis."""
     def reflect(self, history: List[str]) -> str:
         """Рефлексия"""
         try:
-            # TODO: Реализовать рефлексию
-            return f"🤔 Reflected on {len(history)} steps"
+            # Анализируем историю и делаем выводы
+            if len(history) == 0:
+                return f"🤔 No history to reflect on"
+            
+            # Проверяем последние действия
+            recent_actions = history[-3:] if len(history) >= 3 else history
+            
+            # Анализируем результаты
+            if any("error" in action.lower() for action in recent_actions):
+                return f"🤔 Reflection: Found errors in recent actions. System needs attention."
+            elif any("completed" in action.lower() for action in recent_actions):
+                return f"🤔 Reflection: Actions completed successfully. Goal achieved."
+            else:
+                return f"🤔 Reflection: {len(history)} steps completed. Continuing analysis."
+                
         except Exception as e:
             logger.error(f"Error reflecting: {e}")
             return f"❌ Error reflecting: {str(e)}"
     
-    def react_cycle(self, goal: str, max_steps: int = 20) -> str:
-        """ReAct цикл"""
+    def react_cycle(self, goal: str, max_steps: int = None, autonomous: bool = True) -> str:
+        """ReAct цикл - работает до результата как обычный режим"""
         try:
-            # TODO: Реализовать полный цикл
-            return f"🔄 ReAct cycle for goal: {goal} (max {max_steps} steps)"
+            history = []
+            step_count = 0
+            consecutive_errors = 0
+            max_consecutive_errors = 5
+            
+            while True:
+                # Работаем до результата - игнорируем лимиты
+                if not autonomous and max_steps is not None and step_count >= max_steps:
+                    history.append(f"STOP: Reached max steps limit ({max_steps})")
+                    break
+                
+                # Планируем следующий шаг
+                plan_result = self.plan_step(goal)
+                history.append(f"PLAN: {plan_result}")
+                
+                # Выполняем действие с автономной логикой
+                action_result = self.act_step_autonomous(goal, step_count, history, autonomous)
+                history.append(f"ACTION: {action_result}")
+                
+                # Проверяем на ошибки
+                if "error" in action_result.lower() or "❌" in action_result:
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        history.append(f"STOP: Too many consecutive errors ({consecutive_errors})")
+                        break
+                else:
+                    consecutive_errors = 0
+                
+                # Рефлексируем
+                reflection = self.reflect_autonomous(history, goal, autonomous)
+                history.append(f"REFLECT: {reflection}")
+                
+                step_count += 1
+                
+                # Проверяем достижение цели
+                if self._is_goal_achieved(reflection, goal):
+                    history.append(f"SUCCESS: Goal achieved after {step_count} steps")
+                    break
+                
+                # Проверяем необходимость пользовательского ввода
+                if not autonomous and self._needs_user_input(reflection):
+                    history.append(f"PAUSE: User input required")
+                    break
+                
+                # Убираем защиту от бесконечного цикла - работаем до результата
+                # if not autonomous and step_count > 100:
+                #     history.append(f"STOP: Infinite loop protection triggered")
+                #     break
+            
+            return f"🔄 ReAct cycle completed for goal: {goal}\nSteps: {step_count}\nAutonomous: {autonomous}\nHistory: {' | '.join(history[-5:])}"
+            
         except Exception as e:
             logger.error(f"Error in ReAct cycle: {e}")
             return f"❌ Error in ReAct cycle: {str(e)}"
+    
+    def act_step_autonomous(self, goal: str, step_count: int, history: List[str], autonomous: bool) -> str:
+        """Обычное выполнение шагов - интеллектуальный выбор инструментов"""
+        try:
+            # Анализируем цель и выбираем подходящий инструмент
+            goal_lower = goal.lower()
+            
+            # Приоритет системной диагностики
+            if "system" in goal_lower or "health" in goal_lower or "diagnose" in goal_lower or "analysis" in goal_lower:
+                return self._execute_system_action(goal, step_count, history)
+            
+            # Приоритет файловых операций
+            elif "file" in goal_lower or "read" in goal_lower or "write" in goal_lower or "create" in goal_lower or "content" in goal_lower:
+                return self._execute_file_action(goal, step_count, history)
+            
+            # Приоритет умного дома
+            elif "home" in goal_lower or "light" in goal_lower or "device" in goal_lower or "door" in goal_lower or "automation" in goal_lower:
+                return self._execute_home_action(goal, step_count, history)
+            
+            # Приоритет сетевых операций
+            elif "network" in goal_lower or "api" in goal_lower or "web" in goal_lower or "url" in goal_lower or "connect" in goal_lower:
+                return self._execute_network_action(goal, step_count, history)
+            
+            # Общие действия
+            else:
+                return self._execute_general_action(goal, step_count, history)
+                
+        except Exception as e:
+            logger.error(f"Error in autonomous action: {e}")
+            return f"❌ Error in autonomous action: {str(e)}"
+    
+    def _execute_home_action(self, goal: str, step_count: int, history: List[str]) -> str:
+        """Выполнение действий с умным домом"""
+        try:
+            # Импортируем HomeTools
+            from ai_client.tools.home_tools import HomeTools
+            import os
+            
+            home_tools = HomeTools(
+                base_url=os.getenv("SMARTHOUSE_BASE_URL", "http://localhost:8005"),
+                role=os.getenv("SMARTHOUSE_ROLE", "admin")
+            )
+            
+            # Анализируем цель и выполняем действие
+            if "light" in goal.lower():
+                if "on" in goal.lower():
+                    return home_tools.set_device_state("light", "on")
+                elif "off" in goal.lower():
+                    return home_tools.set_device_state("light", "off")
+                else:
+                    return home_tools.get_device_status("light")
+            elif "door" in goal.lower():
+                if "open" in goal.lower():
+                    return home_tools.set_device_state("door", "open")
+                elif "close" in goal.lower():
+                    return home_tools.set_device_state("door", "close")
+                else:
+                    return home_tools.get_device_status("door")
+            else:
+                # Общий статус устройств
+                return home_tools.list_devices()
+                
+        except Exception as e:
+            logger.error(f"Error in home action: {e}")
+            return f"❌ Error in home action: {str(e)}"
+    
+    def _execute_file_action(self, goal: str, step_count: int, history: List[str]) -> str:
+        """Выполнение файловых операций"""
+        try:
+            if "read" in goal.lower():
+                # Извлекаем имя файла из цели
+                import re
+                file_match = re.search(r'read\s+(\S+)', goal.lower())
+                if file_match:
+                    file_path = file_match.group(1)
+                    return self.read_file(file_path)
+                else:
+                    return "❌ No file specified for reading"
+            elif "write" in goal.lower() or "create" in goal.lower():
+                return "⏸️ File write operations require user confirmation"
+            else:
+                return self.get_recent_file_changes()
+                
+        except Exception as e:
+            logger.error(f"Error in file action: {e}")
+            return f"❌ Error in file action: {str(e)}"
+    
+    def _execute_system_action(self, goal: str, step_count: int, history: List[str]) -> str:
+        """Системные операции - глубокий анализ"""
+        try:
+            goal_lower = goal.lower()
+            
+            # Комплексная системная диагностика
+            if "health" in goal_lower or "diagnose" in goal_lower:
+                health_result = self.get_system_health()
+                logs_result = self.get_system_logs(20)
+                errors_result = self.get_error_summary()
+                return f"🔧 System Analysis:\n{health_result}\n\nRecent Logs:\n{logs_result}\n\nErrors:\n{errors_result}"
+            
+            # Глубокий анализ логов
+            elif "logs" in goal_lower or "log" in goal_lower:
+                logs_result = self.get_system_logs(50)
+                return f"📋 Log Analysis:\n{logs_result}"
+            
+            # Детальный анализ ошибок
+            elif "errors" in goal_lower or "error" in goal_lower:
+                errors_result = self.get_error_summary()
+                logs_result = self.get_system_logs(10)
+                return f"❌ Error Analysis:\n{errors_result}\n\nRecent Logs:\n{logs_result}"
+            
+            # Полная системная информация
+            elif "info" in goal_lower or "information" in goal_lower:
+                info_result = self.get_system_info()
+                health_result = self.get_system_health()
+                return f"ℹ️ System Information:\n{info_result}\n\nHealth Status:\n{health_result}"
+            
+            # По умолчанию - комплексный анализ
+            else:
+                health_result = self.get_system_health()
+                logs_result = self.get_system_logs(15)
+                return f"🔧 System Analysis:\n{health_result}\n\nRecent Activity:\n{logs_result}"
+                
+        except Exception as e:
+            logger.error(f"Error in system action: {e}")
+            return f"❌ Error in system action: {str(e)}"
+    
+    def _execute_network_action(self, goal: str, step_count: int, history: List[str]) -> str:
+        """Выполнение сетевых и API операций"""
+        try:
+            goal_lower = goal.lower()
+            
+            if "network" in goal_lower:
+                return self.diagnose_network()
+            elif "api" in goal_lower:
+                return "⏸️ API operations require user confirmation"
+            elif "web" in goal_lower or "url" in goal_lower:
+                # Извлекаем URL из цели
+                import re
+                url_match = re.search(r'https?://\S+', goal)
+                if url_match:
+                    url = url_match.group(0)
+                    return self.fetch_url(url)
+                else:
+                    return "❌ No URL specified for web operation"
+            else:
+                return f"🔧 Network action for goal: {goal} (step {step_count})"
+                
+        except Exception as e:
+            logger.error(f"Error in network action: {e}")
+            return f"❌ Error in network action: {str(e)}"
+    
+    def _execute_general_action(self, goal: str, step_count: int, history: List[str]) -> str:
+        """Выполнение общих действий"""
+        try:
+            # Пытаемся понять цель и выполнить подходящее действие
+            if "status" in goal.lower():
+                return self.get_system_health()
+            elif "check" in goal.lower():
+                return self.get_recent_file_changes()
+            elif "info" in goal.lower():
+                return self.get_system_info()
+            elif "structure" in goal.lower():
+                return self.get_project_structure()
+            else:
+                return f"🔧 General action for goal: {goal} (step {step_count})"
+                
+        except Exception as e:
+            logger.error(f"Error in general action: {e}")
+            return f"❌ Error in general action: {str(e)}"
+    
+    def reflect_autonomous(self, history: List[str], goal: str, autonomous: bool) -> str:
+        """Рефлексия - анализ и планирование"""
+        try:
+            if len(history) == 0:
+                return f"🤔 No history to reflect on"
+            
+            # Анализируем полную историю
+            all_actions = history
+            recent_actions = history[-10:] if len(history) >= 10 else history
+            
+            # Анализ ошибок
+            error_count = sum(1 for action in all_actions if "error" in action.lower() or "❌" in action)
+            if error_count > 0:
+                return f"🤔 Found {error_count} errors across {len(all_actions)} steps. Analyzing patterns and attempting recovery."
+            
+            # Анализ прогресса
+            progress_indicators = ["completed", "success", "achieved", "done", "retrieved", "found", "ok", "working", "functional"]
+            progress_count = sum(1 for action in recent_actions 
+                               if any(indicator in action.lower() for indicator in progress_indicators))
+            
+            # Анализ типа цели и прогресса
+            goal_lower = goal.lower()
+            
+            # Системная диагностика
+            if "diagnose" in goal_lower or "system" in goal_lower:
+                system_actions = [action for action in recent_actions if "system" in action.lower() or "health" in action.lower()]
+                if len(system_actions) > 0:
+                    return f"🤔 System analysis in progress. {len(system_actions)} system actions completed. Continuing diagnosis."
+                else:
+                    return f"🤔 Starting system analysis. {len(history)} total steps completed."
+            
+            # Файловые операции
+            elif "file" in goal_lower or "read" in goal_lower or "write" in goal_lower:
+                file_actions = [action for action in recent_actions if "file" in action.lower() or "read" in action.lower()]
+                if len(file_actions) > 0:
+                    return f"🤔 File operations in progress. {len(file_actions)} file actions completed. Continuing file analysis."
+                else:
+                    return f"🤔 Starting file analysis. {len(history)} total steps completed."
+            
+            # Умный дом
+            elif "home" in goal_lower or "device" in goal_lower or "light" in goal_lower:
+                home_actions = [action for action in recent_actions if "home" in action.lower() or "device" in action.lower()]
+                if len(home_actions) > 0:
+                    return f"🤔 Home automation in progress. {len(home_actions)} home actions completed. Continuing device analysis."
+                else:
+                    return f"🤔 Starting home analysis. {len(history)} total steps completed."
+            
+            # Сетевые операции
+            elif "network" in goal_lower or "api" in goal_lower or "web" in goal_lower:
+                network_actions = [action for action in recent_actions if "network" in action.lower() or "api" in action.lower()]
+                if len(network_actions) > 0:
+                    return f"🤔 Network analysis in progress. {len(network_actions)} network actions completed. Continuing network diagnosis."
+                else:
+                    return f"🤔 Starting network analysis. {len(history)} total steps completed."
+            
+            # Общий анализ прогресса
+            elif progress_count > 0:
+                return f"🤔 Good progress detected. {progress_count} successful actions in recent {len(recent_actions)} steps. Goal achievement likely."
+            else:
+                return f"🤔 {len(history)} total steps completed. Continuing analysis toward goal: {goal}"
+                
+        except Exception as e:
+            logger.error(f"Error in reflection: {e}")
+            return f"❌ Error in reflection: {str(e)}"
+    
+    def _is_goal_achieved(self, reflection: str, goal: str) -> bool:
+        """Проверка достижения цели"""
+        try:
+            # Индикаторы достижения
+            achievement_indicators = [
+                "goal achieved", "completed", "success", "achieved", "done", "finished",
+                "цель достигнута", "завершено", "успешно", "выполнено", "готово",
+                "analysis complete", "diagnosis finished", "retrieved successfully"
+            ]
+            
+            # Индикаторы неудачи
+            failure_indicators = [
+                "failed", "error", "cannot", "unable", "impossible", "not found", "failed to",
+                "не удалось", "ошибка", "невозможно", "не найдено", "не удалось"
+            ]
+            
+            reflection_lower = reflection.lower()
+            goal_lower = goal.lower()
+            
+            # Проверяем на неудачу
+            if any(indicator in reflection_lower for indicator in failure_indicators):
+                return False
+            
+            # Проверяем на достижение
+            if any(indicator in reflection_lower for indicator in achievement_indicators):
+                return True
+            
+            # Логика для специфических целей
+            if "diagnose" in goal_lower or "system" in goal_lower:
+                if any(indicator in reflection_lower for indicator in [
+                    "diagnosis completed", "health check done", "system analysis finished"
+                ]):
+                    return True
+            
+            if "file" in goal_lower or "read" in goal_lower:
+                if any(indicator in reflection_lower for indicator in [
+                    "file content", "read successfully", "file analysis complete"
+                ]):
+                    return True
+            
+            if "home" in goal_lower or "device" in goal_lower:
+                if any(indicator in reflection_lower for indicator in [
+                    "device status", "status retrieved", "home analysis complete"
+                ]):
+                    return True
+            
+            if "network" in goal_lower or "api" in goal_lower:
+                if any(indicator in reflection_lower for indicator in [
+                    "network analysis", "api check complete", "network diagnosis finished"
+                ]):
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking goal achievement: {e}")
+            return False
+    
+    def _needs_user_input(self, reflection: str) -> bool:
+        """Проверка необходимости пользовательского ввода"""
+        try:
+            input_indicators = [
+                "user input", "confirmation", "clarification", "specify",
+                "пользовательский ввод", "подтверждение", "уточнение"
+            ]
+            
+            reflection_lower = reflection.lower()
+            return any(indicator in reflection_lower for indicator in input_indicators)
+            
+        except Exception as e:
+            logger.error(f"Error checking user input need: {e}")
+            return False
     
     # Web инструменты
     def web_search(self, query: str) -> str:
@@ -971,7 +1357,7 @@ Be detailed and specific in your analysis."""
                 'get_system_logs', 'get_error_summary', 'analyze_image', 'web_search',
                 'switch_model', 'force_model_execution', 'read_user_profile',
                 'search_user_data', 'get_recent_file_changes',
-                'append_to_file', 'safe_create_file'
+                'append_to_file', 'safe_create_file', 'get_system_analysis'
             ]
             
             if func_name not in known_tools:
@@ -1041,21 +1427,44 @@ Be detailed and specific in your analysis."""
         
         # Пытаемся парсить как позиционные аргументы
         else:
-            # Паттерн для строковых аргументов в кавычках
-            quoted_pattern = r'["\']([^"\']*)["\']'
-            quoted_matches = re.findall(quoted_pattern, args_str)
-            
-            # Паттерн для аргументов без кавычек
-            unquoted_pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b'
-            unquoted_matches = re.findall(unquoted_pattern, args_str)
-            
-            # Объединяем результаты
-            all_matches = quoted_matches + unquoted_matches
+            # Улучшенный парсер для позиционных аргументов
+            args = []
+            i = 0
+            while i < len(args_str):
+                # Пропускаем пробелы и запятые
+                while i < len(args_str) and args_str[i] in ' \t,':
+                    i += 1
+                if i >= len(args_str):
+                    break
+                
+                # Если начинается с кавычки
+                if args_str[i] in '"\'':
+                    quote = args_str[i]
+                    i += 1
+                    start = i
+                    # Ищем закрывающую кавычку
+                    while i < len(args_str) and args_str[i] != quote:
+                        i += 1
+                    if i < len(args_str):
+                        args.append(args_str[start:i])
+                        i += 1  # Пропускаем закрывающую кавычку
+                    else:
+                        # Незакрытая кавычка - берем до конца
+                        args.append(args_str[start:])
+                        break
+                else:
+                    # Аргумент без кавычек - берем до следующей запятой или конца
+                    start = i
+                    while i < len(args_str) and args_str[i] not in ',)':
+                        i += 1
+                    arg = args_str[start:i].strip()
+                    if arg:
+                        args.append(arg)
             
             # Сопоставляем с ожидаемыми параметрами и разрешаем переменные
             for i, param in enumerate(expected_params):
-                if i < len(all_matches):
-                    value = all_matches[i]
+                if i < len(args):
+                    value = args[i]
                     # Разрешаем переменные
                     if value in variable_resolutions:
                         value = variable_resolutions[value]
@@ -1126,8 +1535,15 @@ Be detailed and specific in your analysis."""
                 content = args.get("content", "")
                 logger.info(f"🔧 append_to_file: path={path}, content_length={len(content)}")
                 result = self.append_to_file(path, content)
-                logger.info(f"✅ append_to_file result: {result}")
-                return result
+                
+                # Проверяем что файл действительно создался/обновился
+                if os.path.exists(path):
+                    file_size = os.path.getsize(path)
+                    logger.info(f"✅ append_to_file verified: {path} exists, size={file_size}")
+                    return result
+                else:
+                    logger.error(f"❌ append_to_file failed: {path} does not exist")
+                    return f"❌ Error: File {path} was not created"
             
             elif func_name == "safe_create_file":
                 args = self._parse_arguments(args_str, ["path", "content"])
@@ -1220,6 +1636,16 @@ Be detailed and specific in your analysis."""
                 logger.info(f"🔧 get_error_summary")
                 result = self.get_error_summary()
                 logger.info(f"✅ get_error_summary result: {result[:200]}..." if len(result) > 200 else result)
+                return result
+            
+            elif func_name == "get_system_analysis":
+                logger.info(f"🔧 get_system_analysis")
+                # Делегируем в AI Client для получения системного анализа
+                if hasattr(self.ai_client, 'get_system_analysis'):
+                    result = self.ai_client.get_system_analysis()
+                else:
+                    result = "System analysis not available"
+                logger.info(f"✅ get_system_analysis result: {result[:200]}..." if len(result) > 200 else result)
                 return result
             
             elif func_name == "diagnose_system_health":
@@ -1363,11 +1789,12 @@ Be detailed and specific in your analysis."""
                 return result
             
             elif func_name == "react_cycle":
-                args = self._parse_arguments(args_str, ["goal", "max_steps"])
+                args = self._parse_arguments(args_str, ["goal", "max_steps", "autonomous"])
                 goal = args.get("goal", "")
                 max_steps = args.get("max_steps", 20)
-                logger.info(f"🔧 react_cycle: goal={goal}, max_steps={max_steps}")
-                result = self.react_cycle(goal, int(max_steps))
+                autonomous = args.get("autonomous", "false").lower() == "true"
+                logger.info(f"🔧 react_cycle: goal={goal}, max_steps={max_steps}, autonomous={autonomous}")
+                result = self.react_cycle(goal, int(max_steps) if max_steps else None, autonomous)
                 logger.info(f"✅ react_cycle result: {result[:200]}..." if len(result) > 200 else result)
                 return result
             

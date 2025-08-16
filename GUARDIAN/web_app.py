@@ -14,6 +14,7 @@ from collections import deque
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, status, Response, UploadFile, File, BackgroundTasks, WebSocket, WebSocketDisconnect
+from contextlib import asynccontextmanager
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -75,38 +76,6 @@ websocket_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(lev
 # Добавляем WebSocket handler только к основному логгеру
 logger.addHandler(websocket_handler)
 
-app = FastAPI(title="ΔΣ Guardian - Superintelligent Family Architect", version="1.0.0")
-
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Templates
-templates = Jinja2Templates(directory="templates")
-
-# Security
-security = HTTPBasic()
-
-# Session management
-SESSIONS = {}  # In production, use Redis or database
-SESSION_SECRET = secrets.token_urlsafe(32)
-
-# Initialize components
-ai_client = AIClient()
-response_processor = ResponseProcessor(ai_client)
-chat_summary_tools = ChatSummaryTools()
-# Autonomous subsystems (background, no server control here)
-integration_hub = IntegrationHub(ai_client)
-system_agent = SystemAnalysisAgent(ai_client)
-guardian_policy = GuardianPolicy()
-autonomous_supervisor = AutonomousSupervisor(integration_hub, system_agent, interval_seconds=180, policy=guardian_policy)
-
-# MQTT bridge for simulator controls
-mqtt_bridge = MqttBridge(host=os.getenv("MQTT_HOST", "localhost"), port=int(os.getenv("MQTT_PORT", "1883")), client_id="web_app")
-
-# HomeTools instance (SmartHouse REST)
-SMARTHOUSE_BASE = os.getenv("SMARTHOUSE_BASE_URL", "http://localhost:8005")
-home_tools = HomeTools(base_url=SMARTHOUSE_BASE, role=os.getenv("SMARTHOUSE_ROLE", "admin"))
-
 # SmartHouse SSE events buffer
 _smarthouse_events: "deque[Dict[str, Any]]" = deque(maxlen=200)
 _sse_task: Optional[asyncio.Task] = None
@@ -147,34 +116,66 @@ async def _consume_smarthouse_sse(base_url: str):
             logger.warning(f"SSE reconnect in 3s due to: {e}")
             await asyncio.sleep(3)
 
-
-@app.on_event("startup")
-async def _startup_autonomous():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _sse_task
+    
+    # Startup
     try:
         await integration_hub.start()
         await autonomous_supervisor.start()
         # Connect MQTT bridge (non-blocking, tolerate absence)
         mqtt_bridge.connect()
         # Start SmartHouse SSE listener
-        global _sse_task
         if _sse_task is None:
             _sse_task = asyncio.create_task(_consume_smarthouse_sse(SMARTHOUSE_BASE), name="smarthouse_sse")
     except Exception as e:
         logger.warning(f"Autonomous startup warning: {e}")
-
-
-@app.on_event("shutdown")
-async def _shutdown_autonomous():
+    
+    yield
+    
+    # Shutdown
     try:
         await autonomous_supervisor.stop()
         await integration_hub.stop()
         # Stop SSE task
-        global _sse_task
         if _sse_task is not None:
             _sse_task.cancel()
             _sse_task = None
     except Exception as e:
         logger.warning(f"Autonomous shutdown warning: {e}")
+
+app = FastAPI(title="ΔΣ Guardian - Superintelligent Family Architect", version="1.0.0", lifespan=lifespan)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Templates
+templates = Jinja2Templates(directory="templates")
+
+# Security
+security = HTTPBasic()
+
+# Session management
+SESSIONS = {}  # In production, use Redis or database
+SESSION_SECRET = secrets.token_urlsafe(32)
+
+# Initialize components
+ai_client = AIClient()
+response_processor = ResponseProcessor(ai_client)
+chat_summary_tools = ChatSummaryTools()
+# Autonomous subsystems (background, no server control here)
+integration_hub = IntegrationHub(ai_client)
+system_agent = SystemAnalysisAgent(ai_client)
+guardian_policy = GuardianPolicy()
+autonomous_supervisor = AutonomousSupervisor(integration_hub, system_agent, interval_seconds=180, policy=guardian_policy)
+
+# MQTT bridge for simulator controls
+mqtt_bridge = MqttBridge(host=os.getenv("MQTT_HOST", "localhost"), port=int(os.getenv("MQTT_PORT", "1883")), client_id="web_app")
+
+# HomeTools instance (SmartHouse REST)
+SMARTHOUSE_BASE = os.getenv("SMARTHOUSE_BASE_URL", "http://localhost:8005")
+home_tools = HomeTools(base_url=SMARTHOUSE_BASE, role=os.getenv("SMARTHOUSE_ROLE", "admin"))
 # conversation_history = ConversationHistory() # This line is removed
 
 def get_recent_file_changes() -> str:
@@ -523,6 +524,60 @@ async def chat_stream_endpoint(
                     yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
             
             logger.info(f"🔧 STREAMING CHAT: Response processing completed")
+            
+            # Обрабатываем tool calls после завершения стриминга
+            has_errors = False
+            if full_response:
+                logger.info(f"🔧 STREAMING CHAT: Processing tool calls for full response ({len(full_response)} chars)")
+                processed = await response_processor.process_complete_response(full_response)
+                if processed.tool_calls:
+                    logger.info(f"🔧 STREAMING CHAT: Found {len(processed.tool_calls)} tool calls to execute")
+                    
+                    # Выполняем tool calls и отправляем результаты
+                    for result in processed.tool_results:
+                        if result.get('success'):
+                            result_content = f"\n\n✅ {result.get('result', '')}"
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': result_content})}\n\n"
+                        else:
+                            has_errors = True
+                            error_msg = result.get('error', '')
+                            error_content = f"\n\n❌ Error: {error_msg}"
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': error_content})}\n\n"
+                else:
+                    logger.info(f"🔧 STREAMING CHAT: No tool calls found in response")
+            
+            # Проверяем на ошибки и продолжаем анализ
+            if has_errors or "❌ Error:" in full_response:
+                logger.info(f"🤔 Errors detected in response, continuing analysis")
+                
+                # Запускаем настоящий анализ системы
+                try:
+                    system_analysis = ai_client.system_tools.diagnose_system_health()
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': f'\\n\\n🔧 System Analysis:\\n{system_analysis}'})}\\n\\n"
+                    
+                    # Продолжаем автономный цикл после анализа
+                    logger.info(f"🤔 Continuing autonomous cycle after analysis")
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': '\\n\\n🤔 Continuing autonomous cycle...'})}\\n\\n"
+                    
+                    # Продолжаем автономный цикл через ReAct
+                    try:
+                        logger.info(f"🤔 Starting autonomous ReAct cycle to continue plan")
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': '\\n\\n🤔 Starting autonomous ReAct cycle to continue plan...'})}\\n\\n"
+                        
+                        # Запускаем ReAct цикл для продолжения плана
+                        react_result = ai_client.system_tools.react_cycle(
+                            goal="Continue autonomous plan: get device status, lock door, provide detailed analysis",
+                            autonomous=True
+                        )
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': f'\\n\\n🤔 Autonomous ReAct Result:\\n{react_result}'})}\\n\\n"
+                        
+                    except Exception as e:
+                        logger.error(f"Error in autonomous ReAct cycle: {e}")
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': f'\\n\\n❌ Failed to continue autonomous cycle: {str(e)}'})}\\n\\n"
+                    
+                except Exception as e:
+                    logger.error(f"Error in system analysis: {e}")
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': '\\n\\n❌ Failed to analyze system status'})}\\n\\n"
             
             # Send final completion signal
             yield f"data: {json.dumps({'type': 'message_complete'})}\n\n"
@@ -1297,49 +1352,7 @@ async def clear_model_status_cache(request: Request):
             "error": str(e)
         }, status_code=500)
 
-@app.post("/api/login-greeting")
-async def login_greeting(request: Request):
-    """Generate personalized greeting for user login"""
-    username = get_current_user(request)
-    if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    try:
-        # Get user profile
-        user_profile = UserProfile(username)
-        user_profile_dict = user_profile.get_profile()
-        user_profile_dict['username'] = username
-        
-        # Get conversation context
-        recent_messages = conversation_history.get_recent_history(limit=5)
-        
-        # Build context for greeting
-        greeting_context = f"""
-        User: {username}
-        Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-        Recent messages: {len(recent_messages)} messages in history
-        """
-        
-        # Generate greeting
-        greeting_response = ai_client.chat(
-            message="Generate a brief, personalized greeting for the user login. Keep it under 100 words.",
-            conversation_context=greeting_context,
-            user_profile=user_profile_dict,
-            additional_prompt="You are welcoming the user back to the system. Be warm, brief, and acknowledge their return."
-        )
-        
-        return JSONResponse({
-            "success": True,
-            "greeting": greeting_response,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-    except Exception as e:
-        logger.error(f"Error generating login greeting: {e}")
-        return JSONResponse({
-            "success": False,
-            "error": str(e)
-        }, status_code=500)
+# login-greeting endpoint removed per request
 
 @app.get("/api/system-analysis")
 async def get_system_analysis(request: Request):
@@ -1708,7 +1721,7 @@ async def analyze_frame(request: Request):
 
         body = await request.body()
         content_type = request.headers.get("content-type", "")
-        use_google = request.query_params.get("google", "false").lower() == "true"
+        use_google = request.query_params.get("google", "true").lower() == "true"
         image_bytes: bytes
         if "application/json" in content_type:
             data = await request.json()
@@ -2079,45 +2092,7 @@ async def generate_chat_title(request: Request):
         logger.error(f"Error generating chat title: {e}")
         return {"success": False, "error": str(e)}
 
-# WebSocket endpoint для real-time логов
-@app.websocket("/ws/logs")
-async def websocket_logs(websocket: WebSocket):
-    await websocket.accept()
-    
-    try:
-        # Простой стриминг логов
-        last_position = 0
-        
-        while True:
-            try:
-                # Читаем лог файл
-                with open('app.log', 'r', encoding='utf-8') as f:
-                    f.seek(last_position)
-                    new_lines = f.readlines()
-                    
-                    if new_lines:
-                        # Отправляем только новые строки
-                        for line in new_lines:
-                            if line.strip():
-                                await websocket.send_text(line.strip())
-                        
-                        # Обновляем позицию
-                        last_position = f.tell()
-                
-                # Ждем 1 секунду
-                await asyncio.sleep(1)
-                
-            except FileNotFoundError:
-                await websocket.send_text("Log file not found")
-                break
-            except Exception as e:
-                await websocket.send_text(f"Log error: {e}")
-                break
-            
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        pass
+# WebSocket endpoint removed per request
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000) 

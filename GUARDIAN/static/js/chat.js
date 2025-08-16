@@ -66,8 +66,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Load private chats
         loadPrivateChats();
         
-        // Start login greeting
-        startLoginGreeting();
+        // Login greeting disabled - too frequent calls
+        // startLoginGreeting();
         
         // Update UI with correct username
         updateUserInterface();
@@ -1911,44 +1911,7 @@ async function checkRecentActivity() {
     }
 }
 
-async function startLoginGreeting() {
-    try {
-        // Проверяем активность за последние 10 минут
-        const hasRecentActivity = await checkRecentActivity();
-        if (hasRecentActivity) {
-            console.log('Recent activity detected, skipping greeting');
-            return;
-        }
-        
-        const response = await fetch('/api/login-greeting', {
-            method: 'POST',
-            credentials: 'include'
-        });
-        if (!response.ok) return;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(line.slice(6));
-                        await handleStreamData(data);
-                    } catch (e) {
-                        console.log('Error parsing greeting stream:', e);
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        console.error('Error in login greeting:', error);
-    }
-}
+// startLoginGreeting function removed per request
 
 // Terminal functionality
 let terminalWebSocket = null;
@@ -2152,84 +2115,7 @@ function initializeSystemAnalysisButtons() {
     console.log('✅ System Analysis buttons initialized');
 } 
 
-// ========== Online Vision Analyzer (Webcam → Server) ==========
-let visionStream = { media: null, timer: null, running: false, lastSendAt: 0 };
-
-async function startVisionAnalyzer() {
-  try {
-    if (visionStream.running) return;
-    const video = document.getElementById('visionVideo');
-    const statusEl = document.getElementById('visionStatus');
-    const resultEl = document.getElementById('visionResult');
-    visionStream.media = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 360 } });
-    video.srcObject = visionStream.media;
-    await video.play();
-    visionStream.running = true;
-    statusEl.textContent = 'Streaming...';
-    // Capture frame with throttling (every 4s min) and pause when tab hidden
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 640; canvas.height = 360;
-    const loop = async () => {
-      if (!visionStream.running) return;
-      if (document.hidden) { // pause when tab not visible
-        visionStream.timer = setTimeout(loop, 1000);
-        return;
-      }
-      const now = Date.now();
-      const minIntervalMs = 4000;
-      const elapsed = now - (visionStream.lastSendAt || 0);
-      if (elapsed < minIntervalMs) {
-        visionStream.timer = setTimeout(loop, minIntervalMs - elapsed);
-        return;
-      }
-      try {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const b64 = canvas.toDataURL('image/jpeg').split(',')[1];
-        const resp = await fetch('/api/vision/analyze-frame?google=false', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_base64: b64 })
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          const r = data.result?.opencv;
-          if (r) {
-            resultEl.textContent = `WxH ${r.dimensions.width}x${r.dimensions.height} | bright ${r.brightness} | contrast ${r.contrast} | sharp ${r.sharpness}`;
-          }
-        }
-        visionStream.lastSendAt = Date.now();
-      } catch (e) {
-        console.warn('Vision loop error', e);
-      } finally {
-        visionStream.timer = setTimeout(loop, 4000);
-      }
-    };
-    loop();
-
-    // Auto-stop on visibility change (resume only by user)
-    const onVisibility = () => {
-      if (document.hidden && visionStream.running) {
-        stopVisionAnalyzer();
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibility, { once: false });
-    visionStream._onVisibility = onVisibility;
-  } catch (e) {
-    alert('Webcam access denied or unavailable');
-  }
-}
-
-function stopVisionAnalyzer() {
-  const statusEl = document.getElementById('visionStatus');
-  if (visionStream.timer) clearTimeout(visionStream.timer);
-  if (visionStream.media) visionStream.media.getTracks().forEach(t => t.stop());
-  if (visionStream._onVisibility) {
-    document.removeEventListener('visibilitychange', visionStream._onVisibility);
-  }
-  visionStream = { media: null, timer: null, running: false, lastSendAt: 0 };
-  statusEl.textContent = 'Stopped';
-}
+// Vision Analyzer removed per request
 
 
 

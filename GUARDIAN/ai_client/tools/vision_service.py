@@ -33,7 +33,7 @@ class VisionService:
             "last_result_available": self._last_result is not None,
         }
 
-    def analyze_frame(self, image_bytes: bytes, use_google: bool = False) -> Dict[str, Any]:
+    def analyze_frame(self, image_bytes: bytes, use_google: bool = True) -> Dict[str, Any]:
         """Analyze a single image frame with OpenCV and optional Google Vision."""
         try:
             # Decode image bytes to OpenCV image

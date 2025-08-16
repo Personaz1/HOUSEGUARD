@@ -66,8 +66,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Load private chats
         loadPrivateChats();
         
-        // Start login greeting
-        startLoginGreeting();
+        // Login greeting disabled - too frequent calls
+        // startLoginGreeting();
         
         // Update UI with correct username
         updateUserInterface();
@@ -1935,44 +1935,7 @@ async function checkRecentActivity() {
     }
 }
 
-async function startLoginGreeting() {
-    try {
-        // Проверяем активность за последние 10 минут
-        const hasRecentActivity = await checkRecentActivity();
-        if (hasRecentActivity) {
-            console.log('Recent activity detected, skipping greeting');
-            return;
-        }
-        
-        const response = await fetch('/api/login-greeting', {
-            method: 'POST',
-            credentials: 'include'
-        });
-        if (!response.ok) return;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(line.slice(6));
-                        await handleStreamData(data);
-                    } catch (e) {
-                        console.log('Error parsing greeting stream:', e);
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        console.error('Error in login greeting:', error);
-    }
-}
+// startLoginGreeting function removed per request
 
 // Terminal functionality
 let terminalWebSocket = null;
@@ -1991,36 +1954,8 @@ function initializeTerminal() {
 }
 
 function connectTerminalWebSocket() {
-    // Prevent duplicate connections
-    if (terminalWebSocket && (terminalWebSocket.readyState === WebSocket.OPEN || terminalWebSocket.readyState === WebSocket.CONNECTING)) {
-        return;
-    }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/logs`;
-    terminalWebSocket = new WebSocket(wsUrl);
-    
-    terminalWebSocket.onopen = function() {
-        console.log('WebSocket connected'); // Debug
-    };
-    
-    terminalWebSocket.onmessage = function(event) {
-        const logLine = event.data;
-        console.log('WebSocket received:', logLine); // Debug
-        addTerminalLine(logLine);
-    };
-    
-    terminalWebSocket.onclose = function() {
-        addTerminalLine('🔌 Disconnected from log stream', 'error');
-        // Reconnect only if terminal panel is expanded/visible
-        const terminal = document.getElementById('terminalPanel');
-        if (terminal && terminal.classList.contains('expanded')) {
-            setTimeout(connectTerminalWebSocket, 5000);
-        }
-    };
-    
-    terminalWebSocket.onerror = function(error) {
-        addTerminalLine('❌ WebSocket error: ' + error, 'error');
-    };
+    // WebSocket disabled per request
+    addTerminalLine('🔌 WebSocket disabled - no backend endpoint', 'system');
 }
 
 function addTerminalLine(text, type = 'info') {

@@ -39,15 +39,9 @@ class VisionTools:
         except Exception as e:
             self.logger.error(f"❌ Vision Tools: OpenCV initialization failed - {e}")
 
-        # Инициализация Google Cloud Vision SDK (опционально через сервисный аккаунт)
+        # Google Cloud Vision SDK отключен - используем только Gemini Vision
         self._gcv_client = None
-        try:
-            from google.cloud import vision as gcv
-            # Если переменная GOOGLE_APPLICATION_CREDENTIALS задана, клиент поднимется
-            self._gcv_client = gcv.ImageAnnotatorClient()
-            self.logger.info("✅ Google Cloud Vision SDK client initialized")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Google Cloud Vision SDK unavailable: {e}")
+        self.logger.info("✅ Google Cloud Vision SDK disabled - using Gemini Vision only")
     
     def capture_image(self, camera_id: str = "default", auto_analyze: bool = True) -> str:
         """

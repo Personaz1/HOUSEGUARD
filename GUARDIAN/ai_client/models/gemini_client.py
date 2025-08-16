@@ -30,17 +30,10 @@ class GeminiClient:
         api_key = self.config.get_gemini_api_key()
         genai.configure(api_key=api_key)
         
-        # Инициализируем Vision API
+        # Google Cloud Vision API отключен - используем только Gemini Vision
         self.vision_client = None
-        try:
-            vision_api_key = self.config.get_vision_api_key()
-            if vision_api_key:
-                self.vision_api_key = vision_api_key
-                logger.info("✅ Google Cloud Vision API key configured")
-            else:
-                logger.warning("⚠️ No Google Cloud Vision API key provided")
-        except Exception as e:
-            logger.warning(f"⚠️ Google Cloud Vision API not available: {e}")
+        self.vision_api_key = None
+        logger.info("✅ Google Cloud Vision API disabled - using Gemini Vision only")
         
         # Определяем доступные модели - приоритет быстрым и дешёвым по умолчанию
         self.models = [
