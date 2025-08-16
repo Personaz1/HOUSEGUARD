@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ΔΣ Smart House - Virtual Home Viewer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin: 0;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .house-container {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .house-layout {
+            flex: 2;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .house-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            grid-template-rows: repeat(5, 1fr);
+            gap: 2px;
+            height: 400px;
+            background: #2c3e50;
+            border-radius: 10px;
+            padding: 10px;
+            position: relative;
+        }
+        
+        .room {
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            text-align: center;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .room:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(255,255,255,0.3);
+        }
+        
+        .entrance { grid-area: 1 / 1 / 3 / 3; background: #e74c3c; }
+        .living { grid-area: 1 / 3 / 4 / 7; background: #3498db; }
+        .kitchen { grid-area: 1 / 7 / 3 / 9; background: #f39c12; }
+        .bedroom { grid-area: 3 / 7 / 5 / 9; background: #9b59b6; }
+        .bathroom { grid-area: 4 / 7 / 5 / 8; background: #1abc9c; }
+        .garage { grid-area: 1 / 9 / 3 / 10; background: #34495e; }
+        .backyard { grid-area: 5 / 1 / 6 / 10; background: #27ae60; }
+        
+        .device-indicator {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #2ecc71;
+            border: 2px solid white;
+            animation: pulse 2s infinite;
+        }
+        
+        .device-indicator.offline {
+            background: #e74c3c;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .controls {
+            flex: 1;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        .control-group h3 {
+            margin: 0 0 10px 0;
+            color: #ecf0f1;
+        }
+        
+        .button {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        
+        .button.danger {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+        }
+        
+        .button.success {
+            background: linear-gradient(45deg, #27ae60, #229954);
+        }
+        
+        .status {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        
+        .status h4 {
+            margin: 0 0 10px 0;
+            color: #ecf0f1;
+        }
+        
+        .camera-feed {
+            background: rgba(0,0,0,0.8);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .camera-feed img {
+            max-width: 100%;
+            border-radius: 5px;
+        }
+        
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .metric-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2ecc71;
+        }
+        
+        .metric-label {
+            font-size: 0.9em;
+            color: #bdc3c7;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏠 ΔΣ Smart House</h1>
+            <p>Virtual Home Simulation & Control Center</p>
+        </div>
+        
+        <div class="house-container">
+            <div class="house-layout">
+                <h3>🏠 House Layout</h3>
+                <div class="house-grid">
+                    <div class="room entrance" onclick="selectRoom('entrance')">
+                        🚪 Entrance
+                        <div class="device-indicator" id="door-sensor"></div>
+                    </div>
+                    <div class="room living" onclick="selectRoom('living')">
+                        🛋️ Living Room
+                        <div class="device-indicator" id="motion-living"></div>
+                    </div>
+                    <div class="room kitchen" onclick="selectRoom('kitchen')">
+                        🍳 Kitchen
+                        <div class="device-indicator" id="motion-kitchen"></div>
+                    </div>
+                    <div class="room bedroom" onclick="selectRoom('bedroom')">
+                        🛏️ Bedroom
+                        <div class="device-indicator" id="motion-bedroom"></div>
+                    </div>
+                    <div class="room bathroom" onclick="selectRoom('bathroom')">
+                        🚿 Bathroom
+                    </div>
+                    <div class="room garage" onclick="selectRoom('garage')">
+                        🚗 Garage
+                        <div class="device-indicator" id="camera-garage"></div>
+                    </div>
+                    <div class="room backyard" onclick="selectRoom('backyard')">
+                        🌳 Backyard
+                        <div class="device-indicator" id="camera-backyard"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <h3>🎛️ Controls</h3>
+                
+                <div class="control-group">
+                    <h4>🏠 Room Occupancy</h4>
+                    <button class="button success" onclick="setOccupancy('living', true)">Enter Living Room</button>
+                    <button class="button danger" onclick="setOccupancy('living', false)">Leave Living Room</button>
+                    <button class="button success" onclick="setOccupancy('kitchen', true)">Enter Kitchen</button>
+                    <button class="button danger" onclick="setOccupancy('kitchen', false)">Leave Kitchen</button>
+                </div>
+                
+                <div class="control-group">
+                    <h4>💡 Lighting</h4>
+                    <button class="button success" onclick="toggleLight('light_living_main')">Toggle Living Light</button>
+                    <button class="button success" onclick="toggleLight('light_kitchen_main')">Toggle Kitchen Light</button>
+                </div>
+                
+                <div class="control-group">
+                    <h4>🔒 Security</h4>
+                    <button class="button danger" onclick="setSecurityMode('armed_home')">Arm Home</button>
+                    <button class="button success" onclick="setSecurityMode('disarmed')">Disarm</button>
+                </div>
+                
+                <div class="control-group">
+                    <h4>📹 Cameras</h4>
+                    <button class="button" onclick="viewCamera('camera_front_door')">Front Door</button>
+                    <button class="button" onclick="viewCamera('camera_backyard')">Backyard</button>
+                    <button class="button" onclick="viewCamera('camera_garage')">Garage</button>
+                </div>
+                
+                <div class="status">
+                    <h4>📊 System Status</h4>
+                    <div id="system-status">Loading...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="metrics">
+            <div class="metric-card">
+                <div class="metric-value" id="total-devices">0</div>
+                <div class="metric-label">Total Devices</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="active-devices">0</div>
+                <div class="metric-label">Active Devices</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="security-status">Disarmed</div>
+                <div class="metric-label">Security Status</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="occupancy-count">0</div>
+                <div class="metric-label">Occupied Rooms</div>
+            </div>
+        </div>
+        
+        <div class="camera-feed" id="camera-feed" style="display: none;">
+            <h3>📹 Camera Feed</h3>
+            <img id="camera-image" src="" alt="Camera Feed">
+            <p id="camera-info">Select a camera to view feed</p>
+        </div>
+    </div>
+
+    <script>
+        const SIMULATOR_URL = 'http://localhost:8200';
+        let currentCamera = null;
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSystemStatus();
+            setInterval(loadSystemStatus, 5000); // Update every 5 seconds
+        });
+        
+        async function loadSystemStatus() {
+            try {
+                const response = await fetch(`${SIMULATOR_URL}/devices`);
+                const data = await response.json();
+                
+                updateDeviceIndicators(data.devices);
+                updateMetrics(data.devices);
+                document.getElementById('system-status').innerHTML = '✅ System Online';
+                
+            } catch (error) {
+                document.getElementById('system-status').innerHTML = '❌ System Offline';
+                console.error('Error loading status:', error);
+            }
+        }
+        
+        function updateDeviceIndicators(devices) {
+            // Update motion sensors
+            const motionIndicators = {
+                'motion_sensor_living': 'motion-living',
+                'motion_sensor_kitchen': 'motion-kitchen',
+                'motion_sensor_bedroom': 'motion-bedroom'
+            };
+            
+            Object.entries(motionIndicators).forEach(([deviceId, indicatorId]) => {
+                const indicator = document.getElementById(indicatorId);
+                if (indicator) {
+                    const device = devices[deviceId];
+                    if (device && device.motion) {
+                        indicator.classList.remove('offline');
+                    } else {
+                        indicator.classList.add('offline');
+                    }
+                }
+            });
+            
+            // Update cameras
+            const cameraIndicators = {
+                'camera_front_door': 'door-sensor',
+                'camera_backyard': 'camera-backyard',
+                'camera_garage': 'camera-garage'
+            };
+            
+            Object.entries(cameraIndicators).forEach(([deviceId, indicatorId]) => {
+                const indicator = document.getElementById(indicatorId);
+                if (indicator) {
+                    const device = devices[deviceId];
+                    if (device && device.motion_detected) {
+                        indicator.classList.remove('offline');
+                    } else {
+                        indicator.classList.add('offline');
+                    }
+                }
+            });
+        }
+        
+        function updateMetrics(devices) {
+            const totalDevices = Object.keys(devices).length;
+            const activeDevices = Object.values(devices).filter(d => 
+                d.state === 'ON' || d.motion || d.motion_detected
+            ).length;
+            
+            document.getElementById('total-devices').textContent = totalDevices;
+            document.getElementById('active-devices').textContent = activeDevices;
+        }
+        
+        async function setOccupancy(room, occupied) {
+            try {
+                const response = await fetch(`${SIMULATOR_URL}/occupancy/${room}?occupied=${occupied}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                console.log(`Occupancy set: ${data}`);
+                loadSystemStatus();
+            } catch (error) {
+                console.error('Error setting occupancy:', error);
+            }
+        }
+        
+        async function toggleLight(lightId) {
+            try {
+                const response = await fetch(`${SIMULATOR_URL}/device/${lightId}/set`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        state: 'TOGGLE'
+                    })
+                });
+                const data = await response.json();
+                console.log(`Light toggled: ${data}`);
+                loadSystemStatus();
+            } catch (error) {
+                console.error('Error toggling light:', error);
+            }
+        }
+        
+        async function setSecurityMode(mode) {
+            try {
+                const response = await fetch(`${SIMULATOR_URL}/security/mode`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        mode: mode
+                    })
+                });
+                const data = await response.json();
+                console.log(`Security mode set: ${data}`);
+                document.getElementById('security-status').textContent = mode;
+            } catch (error) {
+                console.error('Error setting security mode:', error);
+            }
+        }
+        
+        async function viewCamera(cameraId) {
+            currentCamera = cameraId;
+            const cameraFeed = document.getElementById('camera-feed');
+            const cameraImage = document.getElementById('camera-image');
+            const cameraInfo = document.getElementById('camera-info');
+            
+            cameraFeed.style.display = 'block';
+            cameraImage.src = `${SIMULATOR_URL}/camera/${cameraId}/frame?t=${Date.now()}`;
+            cameraInfo.textContent = `Viewing: ${cameraId}`;
+            
+            // Auto-refresh camera feed
+            setInterval(() => {
+                if (currentCamera === cameraId) {
+                    cameraImage.src = `${SIMULATOR_URL}/camera/${cameraId}/frame?t=${Date.now()}`;
+                }
+            }, 2000);
+        }
+        
+        function selectRoom(roomId) {
+            console.log(`Selected room: ${roomId}`);
+            // Highlight selected room
+            document.querySelectorAll('.room').forEach(room => {
+                room.style.border = 'none';
+            });
+            event.target.style.border = '3px solid #f1c40f';
+        }
+    </script>
+</body>
+</html>
+
+
+
+
