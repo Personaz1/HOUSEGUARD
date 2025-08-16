@@ -1969,30 +1969,9 @@ function initializeTerminal() {
 }
 
 function connectTerminalWebSocket() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/logs`;
-    
-    terminalWebSocket = new WebSocket(wsUrl);
-    
-    terminalWebSocket.onopen = function() {
-        console.log('WebSocket connected'); // Debug
-    };
-    
-    terminalWebSocket.onmessage = function(event) {
-        const logLine = event.data;
-        console.log('WebSocket received:', logLine); // Debug
-        addTerminalLine(logLine);
-    };
-    
-    terminalWebSocket.onclose = function() {
-        addTerminalLine('🔌 Disconnected from log stream', 'error');
-        // Try to reconnect after 5 seconds
-        setTimeout(connectTerminalWebSocket, 5000);
-    };
-    
-    terminalWebSocket.onerror = function(error) {
-        addTerminalLine('❌ WebSocket error: ' + error, 'error');
-    };
+    // WebSocket disabled - no backend endpoint
+    console.log('WebSocket disabled - no backend endpoint');
+    addTerminalLine('🔌 WebSocket disabled - no backend endpoint', 'system');
 }
 
 function addTerminalLine(text, type = 'info') {

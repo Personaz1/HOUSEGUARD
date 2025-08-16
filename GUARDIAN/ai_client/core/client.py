@@ -46,7 +46,7 @@ class AIClient:
         self.vision_tools = VisionTools()
         # SmartHouse HomeTools (base URL из окружения или дефолт)
         import os
-        smarthouse_base = os.getenv('SMARTHOUSE_BASE_URL', 'http://localhost:8000')
+        smarthouse_base = os.getenv('SMARTHOUSE_BASE_URL', 'http://localhost:8005')
         smarthouse_role = os.getenv('SMARTHOUSE_ROLE', 'admin')
         self.home_tools = HomeTools(base_url=smarthouse_base, role=smarthouse_role)
         

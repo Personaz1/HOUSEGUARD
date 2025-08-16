@@ -1,0 +1,64 @@
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install additional simulation dependencies
+RUN pip install --no-cache-dir \
+    paho-mqtt \
+    requests \
+    numpy \
+    opencv-python \
+    pyyaml \
+    psycopg2-binary \
+    chromadb \
+    prometheus-client \
+    fastapi \
+    uvicorn
+
+# Copy simulation code
+COPY sim/ ./sim/
+COPY ai_client/ ./ai_client/
+COPY bridge/ ./bridge/
+
+# Create directories for data
+RUN mkdir -p /app/scenarios /app/telemetry /app/reports /app/data
+
+# Copy scenarios
+COPY sim/scenarios/ ./scenarios/
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV SIMULATION_MODE=integrated
+ENV LOG_LEVEL=INFO
+
+# Expose port for API
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
+
+# Default command
+CMD ["python", "-m", "sim.anti_drone_runner", "--curriculum", "phase_a_basic"]
+
+
+

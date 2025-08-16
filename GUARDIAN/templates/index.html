@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartHouse Dashboard</title>
+  <link rel="stylesheet" href="/static/css/guardian.css" />
+  <script>
+    async function loadState() {
+      const r = await fetch('/api/home/state');
+      const j = await r.json();
+      document.getElementById('state').textContent = JSON.stringify(j, null, 2);
+    }
+    async function loadEvents() {
+      const r = await fetch('/api/home/events?limit=50');
+      const j = await r.json();
+      document.getElementById('events').textContent = JSON.stringify(j, null, 2);
+    }
+    async function controlLight() {
+      const id = document.getElementById('light_id').value;
+      const state = document.getElementById('light_on').checked;
+      const brightness = parseInt(document.getElementById('light_bri').value || '0');
+      const r = await fetch('/api/home/control_light', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({device_id:id, state:state, brightness:brightness})});
+      const j = await r.json();
+      alert(j.success ? j.result : j.error);
+      loadState();
+    }
+    window.addEventListener('load', ()=>{loadState(); loadEvents();});
+  </script>
+  <style>
+    .row { display:flex; gap:20px; }
+    pre { background:#111; color:#0f0; padding:12px; border-radius:8px; min-height:240px; }
+    .card { background:#1a1a1a; padding:16px; border-radius:10px; flex:1; }
+  </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>SmartHouse</h2>
+      <div class="row">
+        <div class="card">
+          <h3>State</h3>
+          <button onclick="loadState()">Refresh</button>
+          <pre id="state"></pre>
+        </div>
+        <div class="card">
+          <h3>Recent Events</h3>
+          <button onclick="loadEvents()">Refresh</button>
+          <pre id="events"></pre>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <h3>Quick Light Control</h3>
+        <label>Device ID: <input id="light_id" placeholder="light_living_main" /></label>
+        <label><input type="checkbox" id="light_on" checked /> ON</label>
+        <label>Brightness: <input id="light_bri" type="number" min="0" max="100" value="30" /></label>
+        <button onclick="controlLight()">Apply</button>
+      </div>
+    </div>
+  </body>
+</html>
+

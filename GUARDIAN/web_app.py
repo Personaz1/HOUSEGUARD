@@ -104,7 +104,7 @@ autonomous_supervisor = AutonomousSupervisor(integration_hub, system_agent, inte
 mqtt_bridge = MqttBridge(host=os.getenv("MQTT_HOST", "localhost"), port=int(os.getenv("MQTT_PORT", "1883")), client_id="web_app")
 
 # HomeTools instance (SmartHouse REST)
-SMARTHOUSE_BASE = os.getenv("SMARTHOUSE_BASE_URL", "http://localhost:8000")
+SMARTHOUSE_BASE = os.getenv("SMARTHOUSE_BASE_URL", "http://localhost:8005")
 home_tools = HomeTools(base_url=SMARTHOUSE_BASE, role=os.getenv("SMARTHOUSE_ROLE", "admin"))
 
 # SmartHouse SSE events buffer

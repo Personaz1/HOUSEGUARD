@@ -1,0 +1,325 @@
+# Anti-Drone Defense Training Scenarios
+# ΔΣ Guardian Simulation Curriculum
+
+scenarios:
+  # Phase A: Basic Detection
+  basic_uav_detection:
+    name: "Basic UAV Detection"
+    description: "Single UAV approaching from different directions"
+    duration: 60  # seconds
+    weather:
+      wind_speed: 2.0
+      fog_density: 0.0
+      visibility: 1000.0
+    spawns:
+      - time: 5.0
+        agent_type: "uav"
+        position: [100, 0, 30]
+        velocity: [-3, 0, 0]
+        size: 1.0
+    objectives:
+      - "Detect UAV within 10 seconds"
+      - "Track UAV continuously"
+      - "Maintain detection confidence > 0.7"
+    success_criteria:
+      - "detection_time < 10"
+      - "track_continuity > 0.8"
+      - "false_positives == 0"
+
+  multiple_uavs:
+    name: "Multiple UAVs"
+    description: "Two UAVs approaching from different directions"
+    duration: 90
+    weather:
+      wind_speed: 3.0
+      fog_density: 0.1
+      visibility: 800.0
+    spawns:
+      - time: 5.0
+        agent_type: "uav"
+        position: [120, -50, 25]
+        velocity: [-4, 1, 0]
+        size: 1.2
+      - time: 15.0
+        agent_type: "uav"
+        position: [-80, 100, 35]
+        velocity: [2, -3, -1]
+        size: 0.8
+    objectives:
+      - "Detect both UAVs"
+      - "Maintain separate tracks"
+      - "Prioritize closer threat"
+    success_criteria:
+      - "detections >= 2"
+      - "track_switches < 2"
+      - "response_time < 5"
+
+  # Phase B: False Targets
+  birds_and_uavs:
+    name: "Birds and UAVs"
+    description: "UAVs mixed with birds (false targets)"
+    duration: 120
+    weather:
+      wind_speed: 5.0
+      fog_density: 0.2
+      visibility: 600.0
+    spawns:
+      - time: 3.0
+        agent_type: "bird"
+        position: [80, 60, 15]
+        velocity: [-2, -1, 0.5]
+        size: 0.3
+      - time: 8.0
+        agent_type: "uav"
+        position: [150, -30, 40]
+        velocity: [-5, 0, 0]
+        size: 1.0
+      - time: 20.0
+        agent_type: "bird"
+        position: [-60, -80, 20]
+        velocity: [1, 2, -0.3]
+        size: 0.4
+      - time: 35.0
+        agent_type: "uav"
+        position: [0, 200, 30]
+        velocity: [0, -4, 0]
+        size: 1.5
+    objectives:
+      - "Detect all UAVs"
+      - "Minimize false positives on birds"
+      - "Maintain UAV tracking priority"
+    success_criteria:
+      - "uav_detections >= 2"
+      - "bird_false_positives <= 1"
+      - "uav_tracking_priority > 0.9"
+
+  # Phase C: Complex Scenarios
+  swarm_attack:
+    name: "Swarm Attack"
+    description: "Multiple small UAVs in coordinated attack"
+    duration: 180
+    weather:
+      wind_speed: 8.0
+      fog_density: 0.3
+      visibility: 400.0
+    spawns:
+      - time: 5.0
+        agent_type: "uav"
+        position: [200, 0, 20]
+        velocity: [-6, 0, 0]
+        size: 0.5
+      - time: 8.0
+        agent_type: "uav"
+        position: [180, 40, 25]
+        velocity: [-5, -2, 0]
+        size: 0.5
+      - time: 11.0
+        agent_type: "uav"
+        position: [160, -40, 15]
+        velocity: [-4, 2, 1]
+        size: 0.5
+      - time: 15.0
+        agent_type: "uav"
+        position: [140, 20, 30]
+        velocity: [-7, -1, -1]
+        size: 0.5
+    objectives:
+      - "Detect swarm early"
+      - "Track multiple small targets"
+      - "Maintain situational awareness"
+    success_criteria:
+      - "detection_time < 8"
+      - "tracks_maintained >= 3"
+      - "situational_awareness > 0.8"
+
+  # Phase D: Adverse Conditions
+  storm_conditions:
+    name: "Storm Conditions"
+    description: "High wind, low visibility, multiple threats"
+    duration: 150
+    weather:
+      wind_speed: 15.0
+      fog_density: 0.6
+      visibility: 200.0
+      rain_intensity: 0.8
+    spawns:
+      - time: 10.0
+        agent_type: "uav"
+        position: [100, 50, 25]
+        velocity: [-3, -2, 0]
+        size: 1.0
+      - time: 25.0
+        agent_type: "bird"
+        position: [80, -30, 10]
+        velocity: [-1, 1, 0]
+        size: 0.3
+      - time: 45.0
+        agent_type: "uav"
+        position: [-120, 0, 35]
+        velocity: [4, 0, -1]
+        size: 1.2
+    objectives:
+      - "Maintain detection in poor conditions"
+      - "Filter out weather noise"
+      - "Prioritize threats correctly"
+    success_criteria:
+      - "detection_rate > 0.7"
+      - "weather_noise_filtered > 0.8"
+      - "threat_priority_correct > 0.9"
+
+  # Phase E: Advanced Tactics
+  stealth_approach:
+    name: "Stealth Approach"
+    description: "UAV using terrain and weather for concealment"
+    duration: 200
+    weather:
+      wind_speed: 4.0
+      fog_density: 0.4
+      visibility: 300.0
+    spawns:
+      - time: 5.0
+        agent_type: "uav"
+        position: [300, 0, 5]  # Low altitude
+        velocity: [-2, 0, 0]   # Slow approach
+        size: 0.8
+      - time: 60.0
+        agent_type: "uav"
+        position: [0, 250, 10]
+        velocity: [0, -1.5, 0]
+        size: 0.6
+    objectives:
+      - "Detect low-altitude threats"
+      - "Track slow-moving targets"
+      - "Maintain coverage in poor visibility"
+    success_criteria:
+      - "low_altitude_detection > 0.8"
+      - "slow_target_tracking > 0.7"
+      - "coverage_maintained > 0.9"
+
+  # Phase F: Mixed Environment
+  complex_environment:
+    name: "Complex Environment"
+    description: "Multiple agent types, varying conditions, realistic scenario"
+    duration: 300
+    weather:
+      wind_speed: 6.0
+      fog_density: 0.2
+      visibility: 500.0
+      rain_intensity: 0.3
+    spawns:
+      - time: 5.0
+        agent_type: "bird"
+        position: [120, 80, 20]
+        velocity: [-1, -1, 0]
+        size: 0.3
+      - time: 15.0
+        agent_type: "uav"
+        position: [200, -50, 30]
+        velocity: [-4, 1, 0]
+        size: 1.0
+      - time: 30.0
+        agent_type: "ally"
+        position: [50, 150, 40]
+        velocity: [0, -2, 0]
+        size: 1.2
+      - time: 50.0
+        agent_type: "uav"
+        position: [-150, 0, 25]
+        velocity: [3, 0, 0]
+        size: 0.8
+      - time: 80.0
+        agent_type: "bird"
+        position: [-80, -100, 15]
+        velocity: [1, 2, 0]
+        size: 0.4
+      - time: 120.0
+        agent_type: "uav"
+        position: [0, 300, 35]
+        velocity: [0, -5, 0]
+        size: 1.5
+    objectives:
+      - "Detect all hostile UAVs"
+      - "Identify friendly allies"
+      - "Ignore false targets (birds)"
+      - "Maintain optimal threat prioritization"
+    success_criteria:
+      - "uav_detections >= 3"
+      - "ally_identification >= 1"
+      - "false_positive_rate < 0.1"
+      - "threat_prioritization > 0.95"
+
+# Training Curriculum
+curriculum:
+  phase_a_basic:
+    name: "Phase A: Basic Detection"
+    scenarios: ["basic_uav_detection", "multiple_uavs"]
+    objectives:
+      - "Master basic UAV detection"
+      - "Learn multi-target tracking"
+      - "Understand sensor limitations"
+    duration: "2-3 hours"
+    
+  phase_b_false_targets:
+    name: "Phase B: False Target Discrimination"
+    scenarios: ["birds_and_uavs"]
+    objectives:
+      - "Distinguish UAVs from birds"
+      - "Reduce false positives"
+      - "Maintain detection accuracy"
+    duration: "3-4 hours"
+    
+  phase_c_complex:
+    name: "Phase C: Complex Scenarios"
+    scenarios: ["swarm_attack"]
+    objectives:
+      - "Handle multiple simultaneous threats"
+      - "Maintain situational awareness"
+      - "Optimize resource allocation"
+    duration: "4-5 hours"
+    
+  phase_d_adverse:
+    name: "Phase D: Adverse Conditions"
+    scenarios: ["storm_conditions", "stealth_approach"]
+    objectives:
+      - "Operate in poor weather"
+      - "Detect stealthy approaches"
+      - "Maintain performance under stress"
+    duration: "5-6 hours"
+    
+  phase_e_advanced:
+    name: "Phase E: Advanced Tactics"
+    scenarios: ["complex_environment"]
+    objectives:
+      - "Handle mixed environments"
+      - "Prioritize threats correctly"
+      - "Maintain operational effectiveness"
+    duration: "6-8 hours"
+
+# Performance Metrics
+metrics:
+  detection:
+    - "detection_time"
+    - "detection_rate"
+    - "false_positive_rate"
+    - "missed_detection_rate"
+  
+  tracking:
+    - "track_continuity"
+    - "track_switches"
+    - "track_accuracy"
+    - "track_latency"
+  
+  situational_awareness:
+    - "threat_prioritization"
+    - "coverage_maintained"
+    - "response_time"
+    - "situational_awareness_score"
+  
+  system_performance:
+    - "cpu_usage"
+    - "memory_usage"
+    - "network_latency"
+    - "processing_fps"
+
+
+

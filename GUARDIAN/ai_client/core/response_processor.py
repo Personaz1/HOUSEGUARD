@@ -366,6 +366,10 @@ class ResponseFormatter:
         """Форматирует ответ для отображения в чате"""
         formatted_text = text
         
+        # Убираем "User:" сообщения из ответа AI
+        formatted_text = re.sub(r'User:\s*[^\n]*\n?', '', formatted_text)
+        formatted_text = re.sub(r'^\s*User:\s*[^\n]*\n?', '', formatted_text, flags=re.MULTILINE)
+        
         # Добавляем результаты выполнения инструментов
         for result in tool_results:
             if result.get('success'):
