@@ -83,6 +83,9 @@ class VisionTools:
             # Создаем папку для изображений если её нет
             os.makedirs("memory/captures", exist_ok=True)
             
+            # Очищаем старые фотки (оставляем только последние 10)
+            self._cleanup_old_captures()
+            
             # Сохраняем изображение
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"memory/captures/capture_{camera_id}_{timestamp}.jpg"
@@ -110,6 +113,41 @@ class VisionTools:
             error_msg = f"❌ Ошибка при захвате изображения: {e}"
             self.logger.error(error_msg)
             return error_msg
+    
+    def _cleanup_old_captures(self, keep_count: int = 10):
+        """Очищает старые фотки, оставляя только последние keep_count"""
+        try:
+            captures_dir = "memory/captures"
+            if not os.path.exists(captures_dir):
+                return
+            
+            # Получаем все jpg файлы
+            jpg_files = [f for f in os.listdir(captures_dir) if f.endswith('.jpg') and f.startswith('capture_')]
+            
+            if len(jpg_files) <= keep_count:
+                return
+            
+            # Сортируем по времени создания (новые в конце)
+            jpg_files.sort(key=lambda x: os.path.getctime(os.path.join(captures_dir, x)))
+            
+            # Удаляем старые файлы
+            files_to_delete = jpg_files[:-keep_count]
+            for file in files_to_delete:
+                file_path = os.path.join(captures_dir, file)
+                try:
+                    os.remove(file_path)
+                    # Удаляем соответствующий analysis файл если есть
+                    analysis_file = file.replace('.jpg', '_analysis.json')
+                    analysis_path = os.path.join(captures_dir, analysis_file)
+                    if os.path.exists(analysis_path):
+                        os.remove(analysis_path)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Не удалось удалить {file}: {e}")
+            
+            self.logger.info(f"🗑️ Удалено {len(files_to_delete)} старых фоток")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Ошибка при очистке старых фоток: {e}")
     
     def analyze_image(self, image_path: str) -> str:
         """

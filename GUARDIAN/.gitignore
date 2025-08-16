@@ -103,6 +103,13 @@ cache/
 
 # User data (keep structure but ignore content)
 
+# Camera captures - NEVER commit photos!
+memory/captures/
+memory/captures/*.jpg
+memory/captures/*.png
+memory/captures/*.jpeg
+memory/captures/*_analysis.json
+
 # Мусор и временные файлы
 мусор/
 *.old
