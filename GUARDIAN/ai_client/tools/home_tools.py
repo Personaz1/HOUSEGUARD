@@ -40,77 +40,137 @@ class HomeTools:
 
     # ===== Core Tools (mirror SmartHouse /tools/*) =====
     def control_light(self, device_id: str, state: bool, brightness: Optional[int] = None) -> str:
-        res = self._post("/tools/control_light", {"device_id": device_id, "state": bool(state), "brightness": brightness})
-        return f"Light {device_id} → {'ON' if state else 'OFF'}" + (f", {brightness}%" if brightness is not None else "")
+        try:
+            res = self._post("/tools/control_light", {"device_id": device_id, "state": bool(state), "brightness": brightness})
+            return f"Light {device_id} → {'ON' if state else 'OFF'}" + (f", {brightness}%" if brightness is not None else "")
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def set_thermostat(self, device_id: str, temperature: float) -> str:
-        res = self._post("/tools/set_thermostat", {"device_id": device_id, "temperature": float(temperature)})
-        return f"Thermostat {device_id} → {temperature:.1f}°C"
+        try:
+            res = self._post("/tools/set_thermostat", {"device_id": device_id, "temperature": float(temperature)})
+            return f"Thermostat {device_id} → {temperature:.1f}°C"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def lock_door(self, device_id: str) -> str:
-        res = self._post("/tools/lock_door", {"device_id": device_id})
-        return f"Door {device_id} → LOCKED"
+        try:
+            res = self._post("/tools/lock_door", {"device_id": device_id})
+            return f"Door {device_id} → LOCKED"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def unlock_door(self, device_id: str) -> str:
-        res = self._post("/tools/unlock_door", {"device_id": device_id})
-        return f"Door {device_id} → UNLOCKED"
+        try:
+            res = self._post("/tools/unlock_door", {"device_id": device_id})
+            return f"Door {device_id} → UNLOCKED"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def cover_set_position(self, device_id: str, position: int) -> str:
-        res = self._post("/tools/cover_set_position", {"device_id": device_id, "position": int(position)})
-        return f"Cover {device_id} → {int(position)}%"
+        try:
+            res = self._post("/tools/cover_set_position", {"device_id": device_id, "position": int(position)})
+            return f"Cover {device_id} → {int(position)}%"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def switch_on(self, device_id: str) -> str:
-        res = self._post("/tools/switch_on", {"device_id": device_id})
-        return f"Switch {device_id} → ON"
+        try:
+            res = self._post("/tools/switch_on", {"device_id": device_id})
+            return f"Switch {device_id} → ON"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def switch_off(self, device_id: str) -> str:
-        res = self._post("/tools/switch_off", {"device_id": device_id})
-        return f"Switch {device_id} → OFF"
+        try:
+            res = self._post("/tools/switch_off", {"device_id": device_id})
+            return f"Switch {device_id} → OFF"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def siren_on(self, device_id: str) -> str:
-        res = self._post("/tools/siren_on", {"device_id": device_id})
-        return f"Siren {device_id} → ON"
+        try:
+            res = self._post("/tools/siren_on", {"device_id": device_id})
+            return f"Siren {device_id} → ON"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def siren_off(self, device_id: str) -> str:
-        res = self._post("/tools/siren_off", {"device_id": device_id})
-        return f"Siren {device_id} → OFF"
+        try:
+            res = self._post("/tools/siren_off", {"device_id": device_id})
+            return f"Siren {device_id} → OFF"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def arm_security(self, mode: str = "away") -> str:
-        res = self._post("/tools/arm_security", {"mode": mode or "away"})
-        return f"Security → {mode or 'away'}"
+        try:
+            res = self._post("/tools/arm_security", {"mode": mode or "away"})
+            return f"Security → {mode or 'away'}"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def disarm_security(self) -> str:
-        res = self._post("/tools/disarm_security", {})
-        return "Security → disarmed"
+        try:
+            res = self._post("/tools/disarm_security", {})
+            return "Security → disarmed"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def camera_snapshot(self, camera_id: str) -> str:
-        res = self._post("/tools/camera_snapshot", {"camera_id": camera_id})
-        info = res.get("result") or {}
-        key = (info or {}).get("key") or (info or {}).get("last") or ""
-        return f"Snapshot {camera_id} saved: {key}".strip()
+        try:
+            res = self._post("/tools/camera_snapshot", {"camera_id": camera_id})
+            info = res.get("result") or {}
+            key = (info or {}).get("key") or (info or {}).get("last") or ""
+            return f"Snapshot {camera_id} saved: {key}".strip()
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def camera_analyze(self, camera_id: str, prompt: str = "Опиши сцену кратко по фактам.") -> str:
-        # X-Prompt заголовок принимает SmartHouse; добавим его к headers
-        url = f"{self._base}/tools/camera_analyze"
-        headers = self._headers({"X-Prompt": prompt})
-        r = requests.post(url, data=json.dumps({"camera_id": camera_id}), headers=headers, timeout=self._timeout)
-        r.raise_for_status()
-        data = r.json()
-        return f"Camera {camera_id} analysis: ok" if data else "Camera analyze done"
+        try:
+            # X-Prompt заголовок принимает SmartHouse; добавим его к headers
+            url = f"{self._base}/tools/camera_analyze"
+            headers = self._headers({"X-Prompt": prompt})
+            r = requests.post(url, data=json.dumps({"camera_id": camera_id}), headers=headers, timeout=self._timeout)
+            r.raise_for_status()
+            data = r.json()
+            return f"Camera {camera_id} analysis: ok" if data else "Camera analyze done"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     # ===== State & Discovery =====
     def get_device_status(self, device_id: str) -> str:
-        data = self._get("/tools/get_device_status", params={"device_id": device_id})
-        return f"Status {device_id}: {json.dumps(data.get('result', {}), ensure_ascii=False)[:400]}"
+        try:
+            data = self._get("/tools/get_device_status", params={"device_id": device_id})
+            return f"Status {device_id}: {json.dumps(data.get('result', {}), ensure_ascii=False)[:400]}"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def get_sensor_data(self, sensor_id: str) -> str:
-        data = self._get("/tools/get_sensor_data", params={"sensor_id": sensor_id})
-        return f"Sensor {sensor_id}: {json.dumps(data.get('result', {}), ensure_ascii=False)[:400]}"
+        try:
+            data = self._get("/tools/get_sensor_data", params={"sensor_id": sensor_id})
+            return f"Sensor {sensor_id}: {json.dumps(data.get('result', {}), ensure_ascii=False)[:400]}"
+        except Exception as e:
+            return f"❌ SmartHouse Core недоступен: {str(e)}"
 
     def get_state(self) -> Dict[str, Any]:
-        return self._get("/state")
+        try:
+            return self._get("/state")
+        except Exception as e:
+            return {
+                "error": f"SmartHouse Core недоступен: {str(e)}",
+                "status": "unavailable",
+                "devices": {},
+                "sensors": {}
+            }
 
     def list_devices(self) -> Dict[str, Any]:
-        return self._get("/devices")
+        try:
+            return self._get("/devices")
+        except Exception as e:
+            return {
+                "error": f"SmartHouse Core недоступен: {str(e)}",
+                "devices": [],
+                "status": "unavailable"
+            }
 
 

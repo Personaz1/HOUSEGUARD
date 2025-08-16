@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class SystemAnalysisAgent:
     def __init__(self, ai_client: Optional[AIClient] = None) -> None:
-        self.ai_client = ai_client or AIClient()
+        self.ai_client = ai_client or AIClient(process_type="background")
         self._lock = asyncio.Lock()
         self._last_analysis: Optional[Dict[str, Any]] = None
         self._ttl_seconds: int = 300
@@ -84,14 +84,14 @@ class SystemAnalysisAgent:
                 )
                 message = (
                     "Сгенерируй краткий живой анализ системы на основе контекста. "
-                    f"Контекст: {str(enhanced_context)[:12000]}"
+                    f"Контекст: {str(enhanced_context)}"
                 )
                 response = self.ai_client.chat(
                     message=message,
                     additional_prompt=additional_prompt,
                 )
                 data = {
-                    "system_status": response[:8000],
+                    "system_status": response,
                     "timestamp": datetime.now().isoformat(),
                 }
                 self._last_analysis = data

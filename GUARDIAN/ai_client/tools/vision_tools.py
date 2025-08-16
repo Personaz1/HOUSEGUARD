@@ -278,7 +278,16 @@ class VisionTools:
                         llm_text = None
                     llm_summary = llm_text
                 except Exception as e:
-                    llm_summary = f"Gemini analysis unavailable: {e}"
+                    # Обрабатываем ошибки Gemini Vision API
+                    error_str = str(e)
+                    if "429" in error_str or "quota" in error_str.lower():
+                        llm_summary = "LLM: ❌ Gemini Vision error: Quota exceeded - using basic analysis only"
+                    elif "timeout" in error_str.lower():
+                        llm_summary = "LLM: ❌ Gemini Vision error: Timeout - using basic analysis only"
+                    else:
+                        llm_summary = f"LLM: ❌ Gemini Vision error: {error_str[:100]}"
+                    
+                    self.logger.warning(f"🔍 Vision Tools: Gemini Vision error: {error_str[:200]}")
 
             result = {
                 "basic": basic,
@@ -311,8 +320,9 @@ class VisionTools:
                 summary_lines.append(gv_summary['error'])
 
             if isinstance(llm_summary, str) and llm_summary.strip():
-                summary_lines.append("LLM: " + (llm_summary[:400] + ("..." if len(llm_summary) > 400 else "")))
+                summary_lines.append("LLM: " + llm_summary)
 
+            # Возвращаем полный ответ без ограничений
             return "✅ Анализ изображения:\n" + "\n".join(summary_lines)
 
         except Exception as e:

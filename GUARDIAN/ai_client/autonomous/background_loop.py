@@ -42,13 +42,16 @@ class AutonomousSupervisor:
     async def _run_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
-                # Простой статус для SystemAnalysisAgent
-                snapshot = {
-                    "timestamp": time.time(),
-                    "system_status": "running",
-                    "autonomous_core": "active"
-                }
-                await self.agent.synthesize(snapshot)
+                # ОТКЛЮЧЕНО - SystemAnalysisAgent теперь управляется осознанно через AutonomousCore
+                # snapshot = {
+                #     "timestamp": time.time(),
+                #     "system_status": "running",
+                #     "autonomous_core": "active"
+                # }
+                # await self.agent.synthesize(snapshot)
+                
+                # Простое логирование статуса
+                logger.debug("🚀 AutonomousSupervisor: Background loop active (SystemAnalysisAgent disabled)")
             except Exception as e:
                 logger.error(f"AutonomousSupervisor loop error: {e}")
             finally:

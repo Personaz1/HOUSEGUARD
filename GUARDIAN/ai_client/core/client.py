@@ -31,15 +31,16 @@ class AIClient:
     Упрощенный AI клиент - объединяет все модули
     """
     
-    def __init__(self):
+    def __init__(self, process_type: str = "chat"):
         """Инициализация AI клиента"""
         # Инициализируем утилиты
         self.config = Config()
         self.logger = Logger()
         self.error_handler = ErrorHandler()
+        self.process_type = process_type
         
-        # Инициализируем модули
-        self.gemini_client = GeminiClient()
+        # Инициализируем модули с учетом типа процесса
+        self.gemini_client = GeminiClient(process_type)
         self.file_tools = FileTools()
         self.memory_tools = MemoryTools()
         self.system_tools = SystemTools()
@@ -55,7 +56,7 @@ class AIClient:
         with open("prompts/guardian_prompt.py", "r", encoding="utf-8") as f:
             self.base_prompt = f.read()
         
-        self.logger.info("🚀 AIClient initialized with simplified architecture")
+        self.logger.info(f"🚀 AIClient initialized with process_type: {process_type}")
     
     # Основные методы - делегируем в соответствующие модули
     

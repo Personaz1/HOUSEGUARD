@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ΔΣ Guardian - Chat</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/chat.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/chat.css') }}?v=2.0">
     <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -37,19 +37,19 @@
 
         <!-- Main chat area -->
         <main class="chat-main">
-            <!-- System Analysis Panel -->
+            <!-- System Analysis Panel - НОВАЯ АРХИТЕКТУРА -->
             <aside class="system-panel" id="systemPanel">
                 <div class="panel-header">
-                    <h3>System Analysis</h3>
+                    <h3>🔧 System Analysis</h3>
                     <div class="panel-controls">
-                        <button class="refresh-btn" onclick="loadSystemAnalysis()">🔄</button>
-                        <button class="refresh-btn" onclick="forceRefreshSystemAnalysis()" title="Force refresh (clear cache)">⚡</button>
+                        <button class="refresh-btn" onclick="loadSystemAnalysis()" title="Refresh">🔄</button>
+                        <button class="refresh-btn" onclick="forceRefreshSystemAnalysis()" title="Force refresh">⚡</button>
+                        <button class="expand-btn" onclick="showFullSystemAnalysis()" title="Full screen">📊</button>
                     </div>
                 </div>
                 
                 <div class="panel-content">
                     <div class="analysis-section">
-                        <h4>Current Status</h4>
                         <div class="status-content" id="systemStatus">
                             <div class="loading-spinner">Loading analysis...</div>
                         </div>
@@ -156,7 +156,7 @@
                 <a href="/roadmap" class="mobile-menu-item">🚀 Roadmap</a>
                 <button class="mobile-menu-item" onclick="loadConversationArchive()">📚 Archive</button>
                 <button class="mobile-menu-item" onclick="showModelStatus()">🤖 Models</button>
-                <button class="mobile-menu-item system-analysis" onclick="showSystemAnalysisModal()">🔧 System Analysis</button>
+
                 <form method="POST" action="/logout" style="display: inline;">
                     <button type="submit" class="mobile-menu-item">🚪 Logout</button>
                 </form>
@@ -164,27 +164,7 @@
         </div>
     </div>
 
-    <!-- Модальное окно System Analysis для мобильных -->
-    <div class="system-analysis-modal" id="systemAnalysisModal">
-        <div class="system-analysis-modal-content">
-            <div class="system-analysis-modal-header">
-                <h3>System Analysis</h3>
-                <button class="system-analysis-modal-close" onclick="closeSystemAnalysisModal()">✕</button>
-            </div>
-            <div class="panel-content">
-                <div class="analysis-section">
-                    <h4>Current Status</h4>
-                    <div class="analysis-controls">
-                        <button class="refresh-btn" onclick="loadSystemAnalysis()">🔄 Refresh</button>
-                        <button class="refresh-btn" onclick="forceRefreshSystemAnalysis()">⚡ Force Refresh</button>
-                    </div>
-                    <div class="status-content" id="systemStatus">
-                        <div class="loading-spinner">Click "Refresh" to load analysis</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+
 
     <!-- Модальное окно Model Status -->
     <div class="modal" id="modelStatusModal" style="display: none;">
@@ -199,6 +179,6 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', path='/js/chat.js') }}?v=1.4"></script>
+    <script src="{{ url_for('static', path='/js/chat.js') }}?v=2.0"></script>
 </body>
 </html> 

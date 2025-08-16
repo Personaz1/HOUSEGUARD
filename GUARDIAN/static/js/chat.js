@@ -1179,53 +1179,45 @@ function createChatHearts() {
 // Start floating hearts
 createChatHearts(); 
 
-// Load system analysis - ФОНОВЫЙ И ПО ЗАПРОСУ
+// Load system analysis - НОВАЯ АРХИТЕКТУРА
 async function loadSystemAnalysis() {
     try {
         console.log('🔧 Loading system analysis...');
         
-        // Показываем загрузку только если модальное окно открыто
         const statusElement = document.getElementById('systemStatus');
-        const modal = document.getElementById('systemAnalysisModal');
-        const isModalOpen = modal && modal.classList.contains('active');
-        
-        if (statusElement && isModalOpen) {
+        if (statusElement) {
             statusElement.innerHTML = '<div class="loading-spinner">Loading analysis...</div>';
         }
         
         const response = await fetch('/api/system-analysis', {
-            credentials: 'same-origin'
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache'
+            }
         });
         
         if (response.ok) {
             const data = await response.json();
             console.log('📊 System analysis data:', data);
             
-            // Обрабатываем новый формат ответа от IntegrationHub
             if (data.system_status) {
-                // Прямой ответ от IntegrationHub
+                // Прямой формат от API
                 updateSystemPanel(data);
-            } else if (data.success && data.analysis) {
-                // Старый формат с merged result
-                const analysis = data.analysis.llm_analysis || data.analysis;
-                updateSystemPanel(analysis);
+            } else if (data.analysis) {
+                // Старый формат с оберткой
+                updateSystemPanel(data.analysis);
             } else {
                 console.error('❌ Unexpected system analysis format:', data);
-                if (isModalOpen) {
-                    showSystemError('Unexpected response format');
-                }
+                showSystemError('Invalid analysis format');
             }
         } else {
             console.error('❌ System analysis failed:', response.status);
-            if (isModalOpen) {
-                showSystemError(`Analysis failed: ${response.status}`);
-            }
+            showSystemError(`Analysis failed: ${response.status}`);
         }
     } catch (error) {
         console.error('❌ System analysis error:', error);
-        if (isModalOpen) {
-            showSystemError(`Connection error: ${error.message}`);
-        }
+        showSystemError('Failed to load analysis');
     }
 }
 
@@ -1346,58 +1338,76 @@ function updateSystemPanel(analysis) {
     
     // Update system status for desktop
     const statusElement = document.getElementById('systemStatus');
-    const modal = document.getElementById('systemAnalysisModal');
-    const isModalOpen = modal && modal.classList.contains('active');
     
-    // Обновляем панель только если модальное окно открыто
-    if (statusElement && isModalOpen) {
+    // Обновляем панель всегда, если элемент найден
+    if (statusElement) {
         let statusHtml = '';
         
-        // Обрабатываем новый формат от IntegrationHub
-        if (analysis.system_status) {
-            statusHtml += `<div class="status-section">
-                <h5>System Status:</h5>
-                <p>${analysis.system_status}</p>
+        // НОВАЯ АРХИТЕКТУРА - Обрабатываем формат анализа
+        // Обрабатываем разные форматы данных
+        let systemStatus = analysis.system_status || analysis.status || '';
+        let insights = analysis.insights || analysis.key_insights || '';
+        let recommendations = analysis.recommendations || analysis.suggestions || '';
+        let notes = analysis.notes || analysis.technical_notes || '';
+        
+        // Очищаем и форматируем текст
+        systemStatus = systemStatus.replace(/`/g, '').replace(/\*\*/g, '').trim();
+        insights = insights.replace(/`/g, '').replace(/\*\*/g, '').trim();
+        recommendations = recommendations.replace(/`/g, '').replace(/\*\*/g, '').trim();
+        notes = notes.replace(/`/g, '').replace(/\*\*/g, '').trim();
+        
+        if (systemStatus) {
+            statusHtml += `<div class="status-section system-status">
+                <h5>🚀 System Status</h5>
+                <div class="status-content">${systemStatus}</div>
             </div>`;
         }
         
-        if (analysis.actions_taken && analysis.actions_taken.length > 0) {
-            statusHtml += `<div class="status-section">
-                <h5>Actions Taken:</h5>
-                <ul>${analysis.actions_taken.map(action => `<li>${action}</li>`).join('')}</ul>
+        if (insights) {
+            statusHtml += `<div class="status-section insights">
+                <h5>💡 Key Insights</h5>
+                <div class="status-content">${insights}</div>
             </div>`;
         }
         
-        if (analysis.insights && analysis.insights.length > 0) {
-            statusHtml += `<div class="status-section">
-                <h5>Insights:</h5>
-                <ul>${analysis.insights.map(insight => `<li>${insight}</li>`).join('')}</ul>
+        if (recommendations) {
+            statusHtml += `<div class="status-section recommendations">
+                <h5>🎯 Recommendations</h5>
+                <div class="status-content">${recommendations}</div>
             </div>`;
         }
         
-        if (analysis.recommendations && analysis.recommendations.length > 0) {
-            statusHtml += `<div class="status-section">
-                <h5>Recommendations:</h5>
-                <ul>${analysis.recommendations.map(rec => `<li>${rec}</li>`).join('')}</ul>
+        if (notes) {
+            statusHtml += `<div class="status-section notes">
+                <h5>📝 Technical Notes</h5>
+                <div class="status-content">${notes}</div>
             </div>`;
         }
         
-        if (analysis.notes_added && analysis.notes_added.length > 0) {
-            statusHtml += `<div class="status-section">
-                <h5>Notes Added:</h5>
-                <ul>${analysis.notes_added.map(note => `<li>${note}</li>`).join('')}</ul>
-            </div>`;
-        }
+        // Кнопка полного анализа
+        statusHtml += `<div class="full-analysis-controls">
+            <button onclick="showFullSystemAnalysis()" class="full-analysis-button" title="Full screen analysis">
+                📊 Полный анализ
+            </button>
+        </div>`;
         
-        // Если ничего не нашли, показываем как есть
-        if (!statusHtml) {
-            statusHtml = `<div class="status-text">${JSON.stringify(analysis, null, 2)}</div>`;
+        // Fallback если ничего не нашли
+        if (!systemStatus && !insights && !recommendations && !notes) {
+            statusHtml = `<div class="status-section raw-data">
+                <h5>📊 Analysis Data</h5>
+                <div class="status-content">
+                    <pre>${JSON.stringify(analysis, null, 2)}</pre>
+                </div>
+            </div>
+            <div class="full-analysis-controls">
+                <button onclick="showFullSystemAnalysis()" class="full-analysis-button" title="Full screen analysis">
+                    📊 Полный анализ
+                </button>
+            </div>`;
         }
         
         statusElement.innerHTML = statusHtml;
         console.log('✅ System panel updated');
-    } else if (!isModalOpen) {
-        console.log('🔧 System panel update skipped - modal not open');
     } else {
         console.error('❌ System status element not found');
     }
@@ -1413,6 +1423,135 @@ function showSystemError(message) {
 
 // Auto-refresh system analysis every 5 minutes - ВОССТАНАВЛИВАЕМ!
 setInterval(loadSystemAnalysis, 5 * 60 * 1000); // Фоновый анализ каждые 5 минут
+
+// Full System Analysis Modal Functions
+function showFullSystemAnalysis() {
+    console.log('🔍 Opening full system analysis...');
+    
+    // Создаем модальное окно если его нет
+    let modal = document.getElementById('fullSystemAnalysisModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'fullSystemAnalysisModal';
+        modal.className = 'system-analysis-modal full-size';
+        modal.innerHTML = `
+            <div class="system-analysis-modal-content">
+                <div class="full-analysis-header">
+                    <h2>🔍 System Analysis - Full Report</h2>
+                    <button onclick="closeFullSystemAnalysis()" class="close-full-btn">✕</button>
+                </div>
+                <div class="full-analysis-content">
+                    <div class="loading-spinner">Loading full analysis...</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    modal.style.display = 'flex';
+    loadFullSystemAnalysis();
+}
+
+function loadFullSystemAnalysis() {
+    const contentElement = document.querySelector('.full-analysis-content');
+    if (!contentElement) return;
+    
+    contentElement.innerHTML = '<div class="loading-spinner">Loading full analysis...</div>';
+    
+    fetch('/api/system-analysis', {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('📊 Full system analysis data:', data);
+        updateFullSystemModal(data);
+    })
+    .catch(error => {
+        console.error('❌ Full system analysis error:', error);
+        contentElement.innerHTML = '<div class="error-message">Failed to load full analysis</div>';
+    });
+}
+
+function updateFullSystemModal(analysis) {
+    const contentElement = document.querySelector('.full-analysis-content');
+    if (!contentElement) return;
+    
+    let html = '<div class="full-analysis-sections">';
+    
+    // System Status
+    if (analysis.system_status) {
+        html += `
+            <div class="analysis-section system-status">
+                <h3>🚀 System Status</h3>
+                <div class="analysis-content">${analysis.system_status}</div>
+            </div>
+        `;
+    }
+    
+    // Insights
+    if (analysis.insights) {
+        html += `
+            <div class="analysis-section insights">
+                <h3>💡 Key Insights</h3>
+                <div class="analysis-content">${analysis.insights}</div>
+            </div>
+        `;
+    }
+    
+    // Recommendations
+    if (analysis.recommendations) {
+        html += `
+            <div class="analysis-section recommendations">
+                <h3>🎯 Recommendations</h3>
+                <div class="analysis-content">${analysis.recommendations}</div>
+            </div>
+        `;
+    }
+    
+    // Notes
+    if (analysis.notes) {
+        html += `
+            <div class="analysis-section notes">
+                <h3>📝 Technical Notes</h3>
+                <div class="analysis-content">${analysis.notes}</div>
+            </div>
+        `;
+    }
+    
+    // Raw data fallback
+    if (!analysis.system_status && !analysis.insights && !analysis.recommendations && !analysis.notes) {
+        html += `
+            <div class="analysis-section raw-data">
+                <h3>📊 Raw Analysis Data</h3>
+                <div class="analysis-content">
+                    <pre>${JSON.stringify(analysis, null, 2)}</pre>
+                </div>
+            </div>
+        `;
+    }
+    
+    html += '</div>';
+    contentElement.innerHTML = html;
+}
+
+function closeFullSystemAnalysis() {
+    const modal = document.getElementById('fullSystemAnalysisModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Close modal on outside click
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('fullSystemAnalysisModal');
+    if (modal && event.target === modal) {
+        closeFullSystemAnalysis();
+    }
+});
 
 // File upload functionality
 function initializeFileUpload() {
@@ -2062,39 +2201,15 @@ function toggleMobileMenu() {
     }
 }
 
-function showSystemAnalysisModal() {
-    const modal = document.getElementById('systemAnalysisModal');
-    if (modal) {
-        modal.classList.add('active');
-        console.log('System Analysis modal opened');
-        
-        // Загружаем System Analysis в модальное окно
-        loadMobileSystemAnalysis();
-    }
-}
+// Автоматическая загрузка System Analysis при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🔧 DOM loaded, initializing System Analysis...');
+    // Загружаем System Analysis сразу при загрузке страницы
+    loadSystemAnalysis();
+});
 
-function closeSystemAnalysisModal() {
-    const modal = document.getElementById('systemAnalysisModal');
-    if (modal) {
-        modal.classList.remove('active');
-        console.log('System Analysis modal closed');
-    }
-}
-
-// Улучшенный обработчик клика вне модального окна
+// Обработчик для закрытия мобильного меню
 document.addEventListener('click', function(event) {
-    const modal = document.getElementById('systemAnalysisModal');
-    const modalContent = document.querySelector('.system-analysis-modal-content');
-    
-    if (modal && modal.classList.contains('active')) {
-        // Проверяем, что клик был вне модального окна
-        if (event.target === modal || (modalContent && !modalContent.contains(event.target))) {
-            console.log('Click outside modal detected, closing...');
-            closeSystemAnalysisModal();
-        }
-    }
-    
-    // Обработчик для закрытия мобильного меню
     const mobileMenu = document.getElementById('mobileMenu');
     const mobileMenuContent = document.querySelector('.mobile-menu-content');
     
@@ -2110,13 +2225,7 @@ document.addEventListener('click', function(event) {
 // Добавляем обработчик для клавиши Escape
 document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape') {
-        const modal = document.getElementById('systemAnalysisModal');
         const mobileMenu = document.getElementById('mobileMenu');
-        
-        if (modal && modal.classList.contains('active')) {
-            console.log('Escape key pressed, closing System Analysis modal');
-            closeSystemAnalysisModal();
-        }
         
         if (mobileMenu && mobileMenu.classList.contains('active')) {
             console.log('Escape key pressed, closing mobile menu');
@@ -2128,21 +2237,6 @@ document.addEventListener('keydown', function(event) {
 // Проверка на мобильные устройства
 function isMobileDevice() {
     return window.innerWidth <= 768;
-}
-
-async function loadMobileSystemAnalysis() {
-    // Просто вызываем основную функцию - убираем дублирование
-    await loadSystemAnalysis();
-}
-
-function updateMobileSystemPanel(analysis) {
-    // Используем основную функцию - убираем дублирование
-    updateSystemPanel(analysis);
-}
-
-function showMobileSystemError(message) {
-    // Используем основную функцию - убираем дублирование
-    showSystemError(message);
 } 
 
 // Инициализация обработчиков событий для кнопок System Analysis
