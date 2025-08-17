@@ -96,22 +96,22 @@ class AutonomousCore:
         logger.info("🧠 AutonomousCore: Stopped")
 
     async def _sleeping_guardian_loop(self):
-        """Основной цикл спящего Guardian"""
+        """Основной цикл спящего Guardian - БЕЗ ОГРАНИЧЕНИЙ ВРЕМЕНИ"""
         logger.info("🧠 AutonomousCore: Entering sleep cycle")
         
         while self.running:
             try:
-                # 1. Проводим наблюдения
+                # 1. Проводим наблюдения - БЕЗ ТАЙМАУТОВ
                 triggers = await self._conduct_observations()
                 
-                # 2. Обрабатываем триггеры
+                # 2. Обрабатываем триггеры - БЕЗ ТАЙМАУТОВ
                 if triggers:
                     await self._handle_triggers(triggers)
                     sleep_time = self.min_sleep_time  # Короткий сон после триггеров
                 else:
                     sleep_time = self.base_sleep_time  # Обычный сон
                 
-                # 3. Спим
+                # 3. Спим - МОЖЕМ СПАТЬ СКОЛЬКО УГОДНО
                 logger.info(f"🧠 AutonomousCore: Sleeping for {sleep_time}s")
                 await asyncio.sleep(sleep_time)
                 
@@ -123,11 +123,12 @@ class AutonomousCore:
                 await asyncio.sleep(60)  # Короткий сон при ошибке
 
     async def _conduct_observations(self) -> List[TriggerEvent]:
-        """Проводит все наблюдения и собирает триггеры"""
+        """Проводит все наблюдения и собирает триггеры - БЕЗ ТАЙМАУТОВ"""
         all_triggers = []
         
         for tool_name, tool_func in self.observation_tools.items():
             try:
+                # БЕЗ ТАЙМАУТОВ - каждая утилита может работать сколько угодно
                 result = await tool_func()
                 if result.triggers:
                     all_triggers.extend(result.triggers)
@@ -141,13 +142,13 @@ class AutonomousCore:
         return all_triggers
 
     async def _observe_camera(self) -> ObservationResult:
-        """Наблюдение за камерой - простой инструмент"""
+        """Наблюдение за камерой - простой инструмент без ограничений времени"""
         try:
             # Получаем снимок камеры
             from ..tools.vision_tools import VisionTools
             vision = VisionTools(self.ai_client)
             
-            # Анализируем изображение на предмет людей/движения
+            # Анализируем изображение на предмет людей/движения - БЕЗ ТАЙМАУТА
             analysis = await vision.analyze_image("camera_snapshot")
             
             triggers = []
@@ -188,12 +189,12 @@ class AutonomousCore:
             )
 
     async def _observe_sensors(self) -> ObservationResult:
-        """Наблюдение за сенсорами"""
+        """Наблюдение за сенсорами - без ограничений времени"""
         try:
             from ..tools.home_tools import HomeTools
             home = HomeTools()
             
-            # Получаем данные сенсоров
+            # Получаем данные сенсоров - БЕЗ ТАЙМАУТА
             sensor_data = home.get_sensor_data()
             
             triggers = []
@@ -234,9 +235,9 @@ class AutonomousCore:
             )
 
     async def _observe_logs(self) -> ObservationResult:
-        """Наблюдение за логами системы"""
+        """Наблюдение за логами системы - без ограничений времени"""
         try:
-            # Читаем последние логи
+            # Читаем последние логи - БЕЗ ТАЙМАУТА
             log_data = self._read_recent_logs()
             
             triggers = []
@@ -270,7 +271,7 @@ class AutonomousCore:
             )
 
     async def _observe_system(self) -> ObservationResult:
-        """Наблюдение за состоянием системы"""
+        """Наблюдение за состоянием системы - без ограничений времени"""
         try:
             import psutil
             
@@ -318,12 +319,12 @@ class AutonomousCore:
             )
 
     async def _handle_triggers(self, triggers: List[TriggerEvent]):
-        """Обрабатывает триггеры и доводит до результата"""
+        """Обрабатывает триггеры и доводит до результата - БЕЗ ТАЙМАУТОВ"""
         logger.info(f"🧠 AutonomousCore: Handling {len(triggers)} triggers")
         
         for trigger in triggers:
             try:
-                # Доводим каждый триггер до результата
+                # Доводим каждый триггер до результата - БЕЗ ОГРАНИЧЕНИЙ ВРЕМЕНИ
                 result = await self._resolve_trigger(trigger)
                 logger.info(f"🧠 AutonomousCore: Trigger {trigger.type} resolved: {result}")
                 
@@ -333,7 +334,7 @@ class AutonomousCore:
                 logger.error(f"🧠 AutonomousCore: Error handling trigger {trigger.type}: {e}")
 
     async def _resolve_trigger(self, trigger: TriggerEvent) -> str:
-        """Доводит триггер до результата - как у меня чтение лога"""
+        """Доводит триггер до результата - БЕЗ ТАЙМАУТОВ, как у меня чтение лога"""
         
         if trigger.type == "person_detected":
             return await self._handle_person_detected(trigger)
@@ -347,7 +348,7 @@ class AutonomousCore:
             return f"Unknown trigger type: {trigger.type}"
 
     async def _handle_person_detected(self, trigger: TriggerEvent) -> str:
-        """Обработка обнаружения человека"""
+        """Обработка обнаружения человека - БЕЗ ТАЙМАУТА"""
         prompt = f"""
         ΔΣ Guardian: Обнаружен человек на камере!
         
@@ -361,13 +362,14 @@ class AutonomousCore:
         Действуй как Guardian - защитник дома.
         """
         
+        # БЕЗ ТАЙМАУТА - может думать сколько угодно
         response = self.ai_client.chat(prompt)
         logger.info(f"🧠 AutonomousCore: Person detected response: {response}")
         
         return f"Person detected handled: {response}"
 
     async def _handle_motion(self, trigger: TriggerEvent) -> str:
-        """Обработка движения"""
+        """Обработка движения - БЕЗ ТАЙМАУТА"""
         prompt = f"""
         ΔΣ Guardian: Обнаружено движение!
         
@@ -377,11 +379,12 @@ class AutonomousCore:
         Оцени ситуацию и прими решение.
         """
         
+        # БЕЗ ТАЙМАУТА
         response = self.ai_client.chat(prompt)
         return f"Motion handled: {response}"
 
     async def _handle_anomaly(self, trigger: TriggerEvent) -> str:
-        """Обработка аномалии"""
+        """Обработка аномалии - БЕЗ ТАЙМАУТА"""
         prompt = f"""
         ΔΣ Guardian: Обнаружена аномалия!
         
@@ -391,11 +394,12 @@ class AutonomousCore:
         Прими меры для устранения аномалии.
         """
         
+        # БЕЗ ТАЙМАУТА
         response = self.ai_client.chat(prompt)
         return f"Anomaly handled: {response}"
 
     async def _handle_system_alert(self, trigger: TriggerEvent) -> str:
-        """Обработка системного предупреждения"""
+        """Обработка системного предупреждения - БЕЗ ТАЙМАУТА"""
         prompt = f"""
         ΔΣ Guardian: Системное предупреждение!
         
@@ -405,6 +409,7 @@ class AutonomousCore:
         Прими меры для стабилизации системы.
         """
         
+        # БЕЗ ТАЙМАУТА
         response = self.ai_client.chat(prompt)
         return f"System alert handled: {response}"
 
