@@ -31,11 +31,11 @@ class ToolExtractor:
     """Простой экстрактор tool calls"""
     
     def __init__(self):
-        # Простые паттерны для поиска tool calls
+        # ИСПРАВЛЕННЫЕ паттерны для поиска tool calls
         self.tool_patterns = [
-            r'SystemTools\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*(.*?)\s*\)',
-            r'VisionTools\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*(.*?)\s*\)',
-            r'HomeTools\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*(.*?)\s*\)',
+            r'SystemTools\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*([^)]*?)\s*\)',
+            r'VisionTools\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*([^)]*?)\s*\)',
+            r'HomeTools\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*([^)]*?)\s*\)',
         ]
     
     def extract_tool_calls(self, text: str) -> List[ToolCall]:
@@ -73,10 +73,11 @@ class ToolExtractor:
                 except Exception as e:
                     logger.error(f"❌ TOOL EXTRACTOR: Error parsing tool call: {e}")
         
+        logger.info(f"🔧 TOOL EXTRACTOR: Total tool calls found: {len(tool_calls)}")
         return tool_calls
     
     def _parse_arguments(self, args_str: str) -> Dict[str, Any]:
-        """Парсит аргументы tool call"""
+        """Парсит аргументы tool call - ПРОСТАЯ ВЕРСИЯ"""
         arguments = {}
         args_str = args_str.strip()
         
@@ -84,44 +85,22 @@ class ToolExtractor:
         if not args_str or args_str == '{}':
             return arguments
         
-        # Ищем первый аргумент (путь к файлу)
-        first_quote = args_str.find('"')
-        if first_quote != -1:
-            end_quote = args_str.find('"', first_quote + 1)
-            if end_quote != -1:
-                file_path = args_str[first_quote + 1:end_quote]
-                arguments["arg_0"] = file_path
-                
-                # Ищем второй аргумент (содержимое)
-                remaining = args_str[end_quote + 1:].strip()
-                if remaining.startswith(','):
-                    remaining = remaining[1:].strip()
-                
-                # Если есть второй аргумент
-                if remaining.startswith('"'):
-                    # Ищем закрывающую кавычку для контента
-                    content_start = 1  # Пропускаем открывающую кавычку
-                    content_end = -1
-                    
-                    # Ищем закрывающую кавычку, учитывая экранирование
-                    i = content_start
-                    while i < len(remaining):
-                        if remaining[i] == '"' and (i == 0 or remaining[i-1] != '\\'):
-                            content_end = i
-                            break
-                        i += 1
-                    
-                    if content_end != -1:
-                        # Нашли закрывающую кавычку
-                        content = remaining[content_start:content_end]
-                        arguments["arg_1"] = content
-                    else:
-                        # Не нашли закрывающую кавычку - берем все до конца
-                        content = remaining[content_start:]
-                        arguments["arg_1"] = content
-                else:
-                    # Если нет кавычки, берем все что осталось
-                    arguments["arg_1"] = remaining
+        # ПРОСТОЙ ПАРСЕР: ищем все аргументы в кавычках
+        import re
+        quoted_args = re.findall(r'"([^"]*)"', args_str)
+        
+        if quoted_args:
+            # Первый аргумент - путь к файлу
+            if len(quoted_args) >= 1:
+                arguments["arg_0"] = quoted_args[0]
+            
+            # Второй аргумент - содержимое
+            if len(quoted_args) >= 2:
+                arguments["arg_1"] = quoted_args[1]
+            
+            # Третий аргумент - дополнительные параметры
+            if len(quoted_args) >= 3:
+                arguments["arg_2"] = quoted_args[2]
         
         return arguments
 
@@ -410,7 +389,7 @@ class ResponseProcessor:
         self.tool_executor = ToolExecutor(ai_client)
         self.response_formatter = ResponseFormatter()
     
-    async def process_complete_response(self, text: str, context: Dict[str, Any] = None) -> ProcessedResponse:
+    async def process_complete_response(self, text: str, context: Dict[str, Any] = None, user_message: str = None) -> ProcessedResponse:
         """Обрабатывает полный ответ"""
         # Извлекаем tool calls
         tool_calls = self.tool_extractor.extract_tool_calls(text)

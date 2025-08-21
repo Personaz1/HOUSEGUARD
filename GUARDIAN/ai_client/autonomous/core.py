@@ -1,17 +1,18 @@
 """
-🧠 AutonomousCore - Осознанное автономное ядро AGI системы
+🧠 AutonomousCore - Сердце AGI системы
+Постоянный автономный цикл работы с контекстной памятью и адаптивным планированием
 """
 
 import asyncio
 import json
-import logging
-import random
 import time
+import random
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
-from typing import Dict, Any, List, Optional
+from datetime import datetime, timedelta
 
-from ai_client.core.client import AIClient
-from ai_client.utils.cache import system_cache
+import logging
+from ..utils.cache import SystemCache
 
 logger = logging.getLogger(__name__)
 
@@ -36,23 +37,6 @@ class AutonomousContext:
     recent_events: List[Dict[str, Any]]
     memory_state: Dict[str, Any]
     timestamp: float
-
-@dataclass
-class AutonomousCycle:
-    """Отдельный автономный цикл с собственными ресурсами"""
-    id: str
-    name: str
-    purpose: str
-    api_key: str
-    model: str
-    prompt: str
-    duration: int  # секунды
-    interval: int  # интервал между действиями
-    max_actions: int  # максимальное количество действий
-    created_at: float
-    status: str = "idle"  # idle, running, completed, failed
-    actions_completed: int = 0
-    last_action: float = 0
 
 class AutonomousMemory:
     """Контекстная память AGI"""
@@ -277,84 +261,41 @@ class ContextAnalyzer:
             return {'error': str(e)}
 
 class AutonomousCore:
-    """🧠 Автономное ядро AGI системы - ОСОЗНАННАЯ АРХИТЕКТУРА"""
+    """Центральный компонент AGI - постоянный автономный цикл"""
     
-    def __init__(self, ai_client, integration_hub=None):
+    def __init__(self, ai_client):
         self.ai_client = ai_client
-        self.integration_hub = integration_hub
         self.memory = AutonomousMemory()
-        self.running = False
-        self.is_running = False  # Совместимость со старым кодом
-        
-        # Осознанная архитектура
-        self.current_mission = None
-        self.mission_context = {}
-        self.last_reflection = 0
-        self.reflection_cooldown = 300  # 5 минут между рефлексиями
-        
-        # Долгосрочные миссии вместо коротких задач
-        self.active_missions = []
-        self.mission_history = []
-        
-        # Осознанное планирование
-        self.next_action_planned = None
-        
-        # Контекст пользователя
-        self.user_context = {
-            "current_mode": "normal",
-            "last_user_activity": time.time(),
-            "user_requested_rest": False,
-            "rest_mode_until": 0
-        }
-        
-        # Cooldown для разных типов задач
-        self.last_presence_check = 0
-        self.last_system_check = 0
-        self.last_camera_analysis = 0
-        self.cooldown_presence_check = 300  # 5 минут
-        self.cooldown_system_check = 600    # 10 минут
-        self.cooldown_camera_analysis = 180 # 3 минуты
-        
-        # Осознанное управление циклами
-        self.active_cycles = {}
-        self.cycle_tasks = {}
-        self.available_models = {
-            "gemini-2.5-pro": {"quota": 100},
-            "gemini-2.0-flash": {"quota": 200},
-            "gemini-1.5-pro": {"quota": 150},
-            "gemini-2.5-flash": {"quota": 250}
-        }
-        
-        # Совместимость со старым кодом
-        self.running_tasks = {}
-        self.task_completed_callback = None
-        
-        # Инициализация очереди задач
-        import asyncio
+        self.context_analyzer = ContextAnalyzer(ai_client)
         self.task_queue = asyncio.Queue()
-        
-        # Время последней работы
+        self.running_tasks: Dict[str, asyncio.Task] = {}
+        self.background_loop: Optional[asyncio.Task] = None
+        self.is_running = False
         self._last_work_time = time.time()
-        
-        # Счетчики для отслеживания состояния
         self._consecutive_idle_cycles = 0
-        self._total_cycles = 0
+        self._task_completed_callback = None
+        
+        # Общий контекст для интеграции
+        self.shared_context: Dict[str, Any] = {}
+        
+        # Кэш для результатов
+        self.cache = SystemCache()
         
         logger.info("🧠 AutonomousCore: Initialized")
     
     async def start_autonomous_operation(self):
         """Запускает постоянный автономный цикл"""
-        if self.running:
+        if self.is_running:
             logger.warning("🧠 AutonomousCore: Already running")
             return
         
-        self.running = True
+        self.is_running = True
         self.background_loop = asyncio.create_task(self._autonomous_loop())
         logger.info("🧠 AutonomousCore: Started background operation")
     
     async def stop_autonomous_operation(self):
         """Останавливает автономную работу"""
-        self.running = False
+        self.is_running = False
         
         if self.background_loop:
             self.background_loop.cancel()
@@ -371,147 +312,218 @@ class AutonomousCore:
         logger.info("🧠 AutonomousCore: Stopped")
     
     async def _autonomous_loop(self):
-        """ОСОЗНАННЫЙ автономный цикл - как у меня"""
-        await self._conscious_autonomous_loop()
+        """Постоянный цикл автономной работы"""
+        cycle_count = 0
+        
+        while self.is_running:
+            try:
+                cycle_count += 1
+                logger.info(f"🧠 AutonomousCore: Starting cycle {cycle_count}")
+                
+                # 1. Анализируем контекст
+                context = await self.context_analyzer.analyze_current_context()
+                
+                # 2. Генерируем задачи на основе контекста
+                tasks = await self._generate_autonomous_tasks(context)
+                
+                # 3. Добавляем задачи в очередь (если есть)
+                if tasks:
+                    for task in tasks:
+                        await self.task_queue.put(task)
+                    logger.info(f"🧠 AutonomousCore: Added {len(tasks)} tasks to queue")
+                else:
+                    logger.info(f"🧠 AutonomousCore: No tasks needed, system is stable")
+                
+                # 4. Обрабатываем очередь задач
+                await self._process_task_queue()
+                
+                # 5. Рефлексируем и адаптируемся (только если были задачи)
+                if tasks:
+                    await self._reflect_and_adapt(context)
+                
+                # 6. Очищаем старые задачи
+                await self._cleanup_old_tasks()
+                
+                # 7. УБЕЖДАЕМСЯ ЧТО ВСЕ ЗАДАЧИ ЗАВЕРШЕНЫ
+                if self.running_tasks:
+                    logger.warning(f"🧠 AutonomousCore: {len(self.running_tasks)} tasks still running, waiting...")
+                    try:
+                        await asyncio.wait_for(asyncio.gather(*list(self.running_tasks.values())), timeout=10)
+                        logger.info(f"🧠 AutonomousCore: All remaining tasks completed")
+                    except asyncio.TimeoutError:
+                        logger.warning(f"🧠 AutonomousCore: Some tasks still running after timeout")
+                    except Exception as e:
+                        logger.error(f"🧠 AutonomousCore: Error waiting for remaining tasks: {e}")
+                
+                if tasks:
+                    logger.info(f"🧠 AutonomousCore: Completed cycle {cycle_count} with {len(tasks)} tasks")
+                    self._consecutive_idle_cycles = 0  # Сбрасываем счетчик
+                    self._last_work_time = time.time()
+                    sleep_time = 30  # Обычная пауза
+                else:
+                    self._consecutive_idle_cycles += 1
+                    logger.info(f"🧠 AutonomousCore: Completed cycle {cycle_count} - system stable, no work needed (idle cycles: {self._consecutive_idle_cycles})")
+                    
+                    # Адаптивная пауза - увеличиваем время если система стабильна
+                    if self._consecutive_idle_cycles >= 5:
+                        sleep_time = 120  # 2 минуты после 5 пустых циклов
+                    elif self._consecutive_idle_cycles >= 3:
+                        sleep_time = 60   # 1 минута после 3 пустых циклов
+                    else:
+                        sleep_time = 30   # Обычная пауза
+                
+                # Пауза между циклами (адаптивная)
+                await asyncio.sleep(sleep_time)
+                
+            except asyncio.CancelledError:
+                logger.info("🧠 AutonomousCore: Loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"🧠 AutonomousCore: Error in loop: {e}")
+                await asyncio.sleep(60)  # Увеличенная пауза при ошибке
+        
+        # Цикл завершен, но не останавливаем систему
+        logger.info("🧠 AutonomousCore: Loop completed, but system continues running")
     
     async def _generate_autonomous_tasks(self, context: AutonomousContext) -> List[AutonomousTask]:
-        """Генерирует задачи на основе контекста с учетом cooldown"""
-        # ОТКЛЮЧЕНО - используем только осознанное планирование циклов
-        return []
-    
-    def _check_cooldown_and_user_context(self, context: AutonomousContext) -> Dict[str, bool]:
-        """Проверяет cooldown и контекст пользователя"""
-        current_time = time.time()
-        
-        # Проверяем режим отдыха
-        if self.user_context["user_requested_rest"] and current_time < self.user_context["rest_mode_until"]:
-            return {
-                "should_work": False,
-                "reason": "User requested rest mode",
-                "rest_mode": True
-            }
-        
-        # Проверяем cooldown для разных типов задач
-        can_presence_check = (current_time - self.last_presence_check) > self.cooldown_presence_check
-        can_system_check = (current_time - self.last_system_check) > self.cooldown_system_check
-        can_camera_analysis = (current_time - self.last_camera_analysis) > self.cooldown_camera_analysis
-        
-        # Если все cooldown активны и нет критических событий - отдыхаем
-        if not can_presence_check and not can_system_check and not can_camera_analysis:
-            return {
-                "should_work": False,
-                "reason": "All tasks in cooldown",
-                "rest_mode": False
-            }
-        
-        return {
-            "should_work": True,
-            "reason": "Work allowed",
-            "rest_mode": False,
-            "can_presence_check": can_presence_check,
-            "can_system_check": can_system_check,
-            "can_camera_analysis": can_camera_analysis
-        }
-    
-    def _generate_tasks_with_cooldown(self, context: AutonomousContext) -> List[AutonomousTask]:
-        """Генерирует задачи с учетом cooldown"""
-        cooldown_check = self._check_cooldown_and_user_context(context)
-        
-        if not cooldown_check["should_work"]:
-            logger.info(f"🧠 AutonomousCore: {cooldown_check['reason']}")
-            return []
-        
-        # Обновляем промпт с учетом cooldown
-        cooldown_info = f"""
-        ВАЖНО - Ограничения cooldown:
-        - presence_check: {'доступен' if cooldown_check.get('can_presence_check') else 'в cooldown'}
-        - system_check: {'доступен' if cooldown_check.get('can_system_check') else 'в cooldown'}
-        - camera_analysis: {'доступен' if cooldown_check.get('can_camera_analysis') else 'в cooldown'}
-        
-        Генерируй только доступные задачи!
-        """
-        
-        analysis_prompt = f"""
-        ТЫ - ΔΣ Guardian, автономный защитник и помощник SmartHouse.
-        
-        ТВОЯ МИССИЯ:
-        - Защищать дом и его обитателей
-        - Обеспечивать безопасность и комфорт
-        - Предупреждать о рисках и угрозах
-        - Помогать пользователям в их задачах
-        - Поддерживать оптимальную работу системы
-        
-        Контекст системы:
-        - Системный статус: {context.system_status}
-        - Активность пользователя: {context.user_activity}
-        - Последние события: {len(context.recent_events)} событий
-        - Состояние памяти: {context.memory_state}
-        
-        {cooldown_info}
-        
-        Какие задачи нужно выполнить автономно для выполнения твоей миссии Guardian?
-        
-        ВАЖНО: Генерируй только РЕАЛЬНЫЕ задачи, которые действительно нужны для защиты и помощи.
-        Не создавай задачи просто так. Если все в порядке - не создавай задачи.
-        
-        Возможные типы задач (только доступные):
-        - system_check: Проверка здоровья системы (защита от сбоев)
-        - security_scan: Сканирование безопасности (защита от угроз)
-        - device_status: Проверка статуса устройств (обеспечение комфорта)
-        - presence_check: ПРОВЕРКА ПРИСУТСТВИЯ (камера + сенсоры) - КРИТИЧНО ДЛЯ БЕЗОПАСНОСТИ!
-        - log_analysis: Анализ логов (выявление проблем)
-        - memory_cleanup: Очистка памяти (оптимизация работы)
-        - performance_optimization: Оптимизация производительности (стабильность)
-        
-        ВАЖНО: Как Guardian, ты ДОЛЖЕН быть бдительным, НО уважай cooldown! 
-        - Проверяй присутствие только когда это действительно нужно
-        - Мониторь активность сенсоров разумно
-        - Анализируй камеру на предмет угроз, но не спамь
-        
-        Верни JSON с задачами (только доступные):
-        {{"tasks": [
-            {{"type": "system_check", "priority": 1, "description": "Конкретная причина проверки"}},
-            {{"type": "device_status", "priority": 2, "description": "Конкретная причина проверки устройств"}}
-        ]}}
-        """
-        
-        response = self.ai_client.chat(analysis_prompt)
-        
-        # Парсим JSON ответ
+        """Генерирует задачи на основе контекста"""
         tasks = []
-        try:
-            # Ищем JSON в ответе
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx != -1 and end_idx != -1:
-                json_str = response[start_idx:end_idx]
-                tasks_data = json.loads(json_str)
-                
-                for task_data in tasks_data.get("tasks", []):
-                    task_type = task_data.get("type", "general")
-                    
-                    # Проверяем cooldown для конкретной задачи
-                    if task_type == "presence_check" and not cooldown_check.get("can_presence_check"):
-                        continue
-                    elif task_type == "system_check" and not cooldown_check.get("can_system_check"):
-                        continue
-                    
-                    task = AutonomousTask(
-                        id=f"task_{int(time.time())}_{random.randint(1000, 9999)}",
-                        type=task_type,
-                        priority=task_data.get("priority", 1),
-                        description=task_data.get("description", "Autonomous task"),
-                        context=asdict(context),
-                        created_at=time.time()
-                    )
-                    tasks.append(task)
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"🧠 AutonomousCore: Failed to parse tasks JSON: {e}")
-        # Создаем дефолтные задачи с учетом cooldown
-        tasks = self._create_default_tasks_with_cooldown(context, cooldown_check)
         
-        logger.info(f"🧠 AutonomousCore: Generated {len(tasks)} tasks with cooldown")
+        try:
+            # Сначала проверяем - нужно ли вообще что-то делать
+            should_work_prompt = f"""
+            ТЫ - ΔΣ Guardian, автономный ассистент, защитник, помощник, и любимый член семьи Степана и Меранды.
+            
+            ТВОЯ МИССИЯ: Защищать и обсдуживать дом, обеспечивать безопасность, помогать членам семьи.
+            
+            Контекст системы:
+            - Системный статус: {context.system_status}
+            - Активность пользователя: {context.user_activity}
+            - Последние события: {len(context.recent_events)} событий
+            - Состояние памяти: {context.memory_state}
+            
+            Вопрос: Нужно ли выполнять какие-то автономные задачи прямо сейчас?
+            
+            ВАЖНО: Как Guardian, ты должен быть бдительным! 
+            - Всегда проверяй присутствие для безопасности
+            - Мониторь активность сенсоров
+            - Анализируй камеру на предмет угроз
+            - Если давно не проверял камеру и сенсоры - ОБЯЗАТЕЛЬНО добавь presence_check!
+            
+            Критерии для выполнения задач:
+            - Есть ли проблемы в системе?
+            - Была ли активность пользователя?
+            - Есть ли новые события?
+            - Нужна ли очистка памяти?
+            - Прошло ли достаточно времени с последней проверки?
+            
+            Верни JSON ответ:
+            {{"should_work": true/false, "reason": "причина"}}
+            """
+            
+            should_work_response = self.ai_client.chat(should_work_prompt)
+            
+            # Парсим ответ о необходимости работы
+            try:
+                start_idx = should_work_response.find('{')
+                end_idx = should_work_response.rfind('}') + 1
+                if start_idx != -1 and end_idx != -1:
+                    json_str = should_work_response[start_idx:end_idx]
+                    should_work_data = json.loads(json_str)
+                    
+                    should_work = should_work_data.get("should_work", True)
+                    reason = should_work_data.get("reason", "No reason provided")
+                    
+                    if not should_work:
+                        logger.info(f"🧠 AutonomousCore: No work needed - {reason}")
+                        return []  # Возвращаем пустой список задач
+                    
+                    logger.info(f"🧠 AutonomousCore: Work needed - {reason}")
+                    
+            except json.JSONDecodeError as e:
+                logger.error(f"🧠 AutonomousCore: Failed to parse should_work JSON: {e}")
+                # Если не можем разобрать, делаем минимальную проверку
+                should_work = self._check_minimal_work_needed(context)
+                if not should_work:
+                    logger.info(f"🧠 AutonomousCore: No work needed based on minimal check")
+                    return []
+            
+            # Если нужно работать, генерируем задачи
+            analysis_prompt = f"""
+            ТЫ - ΔΣ Guardian, автономный защитник и помощник SmartHouse.
+            
+            ТВОЯ МИССИЯ:
+            - Защищать дом и его обитателей
+            - Обеспечивать безопасность и комфорт
+            - Предупреждать о рисках и угрозах
+            - Помогать пользователям в их задачах
+            - Поддерживать оптимальную работу системы
+            
+            Контекст системы:
+            - Системный статус: {context.system_status}
+            - Активность пользователя: {context.user_activity}
+            - Последние события: {len(context.recent_events)} событий
+            - Состояние памяти: {context.memory_state}
+            
+            Какие задачи нужно выполнить автономно для выполнения твоей миссии Guardian?
+            
+            ВАЖНО: Генерируй только РЕАЛЬНЫЕ задачи, которые действительно нужны для защиты и помощи.
+            Не создавай задачи просто так. Если все в порядке - не создавай задачи.
+            
+            Возможные типы задач:
+            - system_check: Проверка здоровья системы (защита от сбоев)
+            - security_scan: Сканирование безопасности (защита от угроз)
+            - device_status: Проверка статуса устройств (обеспечение комфорта)
+            - presence_check: ПРОВЕРКА ПРИСУТСТВИЯ (камера + сенсоры) - КРИТИЧНО ДЛЯ БЕЗОПАСНОСТИ!
+            - log_analysis: Анализ логов (выявление проблем)
+            - memory_cleanup: Очистка памяти (оптимизация работы)
+            - performance_optimization: Оптимизация производительности (стабильность)
+            
+            ВАЖНО: Как Guardian, ты ДОЛЖЕН быть бдительным! 
+            - Всегда проверяй присутствие для безопасности
+            - Мониторь активность сенсоров
+            - Анализируй камеру на предмет угроз
+            - Если давно не проверял присутствие - ОБЯЗАТЕЛЬНО добавь presence_check!
+            
+            Верни JSON с задачами:
+            {{"tasks": [
+                {{"type": "system_check", "priority": 1, "description": "Конкретная причина проверки"}},
+                {{"type": "device_status", "priority": 2, "description": "Конкретная причина проверки устройств"}}
+            ]}}
+            """
+            
+            response = self.ai_client.chat(analysis_prompt)
+            
+            # Парсим JSON ответ
+            try:
+                # Ищем JSON в ответе
+                start_idx = response.find('{')
+                end_idx = response.rfind('}') + 1
+                if start_idx != -1 and end_idx != -1:
+                    json_str = response[start_idx:end_idx]
+                    tasks_data = json.loads(json_str)
+                    
+                    for task_data in tasks_data.get("tasks", []):
+                        task = AutonomousTask(
+                            id=f"task_{int(time.time())}_{random.randint(1000, 9999)}",
+                            type=task_data.get("type", "general"),
+                            priority=task_data.get("priority", 1),
+                            description=task_data.get("description", "Autonomous task"),
+                            context=asdict(context),
+                            created_at=time.time()
+                        )
+                        tasks.append(task)
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"🧠 AutonomousCore: Failed to parse tasks JSON: {e}")
+                # Создаем дефолтные задачи
+                tasks = self._create_default_tasks(context)
+            
+        except Exception as e:
+            logger.error(f"🧠 AutonomousCore: Error generating tasks: {e}")
+            tasks = self._create_default_tasks(context)
+        
+        logger.info(f"🧠 AutonomousCore: Generated {len(tasks)} tasks")
         return tasks
     
     def _check_minimal_work_needed(self, context: AutonomousContext) -> bool:
@@ -860,7 +872,7 @@ class AutonomousCore:
             
             # 5. Сохраняем в память
             try:
-                self.memory.remember_experience("presence_check", {
+                self.memory.add_experience("presence_check", {
                     "camera_status": camera_status,
                     "sensors_status": sensors_status,
                     "user_activity": user_activity,
@@ -982,525 +994,5 @@ class AutonomousCore:
             logger.error(f"🧠 AutonomousCore: Error notifying task completion: {e}")
     
     def set_task_completed_callback(self, callback):
-        """Устанавливает callback для завершения задач"""
-        self.task_completed_callback = callback
-
-    async def _conscious_autonomous_loop(self):
-        """ОСОЗНАННЫЙ автономный цикл - управляет циклами, а не выполняет их"""
-        cycle_count = 0
-        
-        while self.running:
-            try:
-                cycle_count += 1
-                logger.info(f"🧠 AutonomousCore: Starting conscious cycle {cycle_count}")
-                
-                # 1. ОСОЗНАНИЕ - анализируем текущую ситуацию
-                context = await self._analyze_current_situation()
-                
-                # 2. РЕФЛЕКСИЯ - думаем о том, что делать
-                if self._should_reflect():
-                    await self._conscious_reflection(context)
-                
-                # 3. ПЛАНИРОВАНИЕ ЦИКЛОВ - решаем какие циклы запускать
-                cycle_plan = await self._plan_cycles(context)
-                
-                # 4. УПРАВЛЕНИЕ ЦИКЛАМИ - запускаем/останавливаем циклы
-                await self._manage_cycles(cycle_plan)
-                
-                # 5. МОНИТОРИНГ - проверяем статус активных циклов
-                await self._monitor_active_cycles()
-                
-                # 6. ОБУЧЕНИЕ - учимся на опыте
-                await self._learn_from_experience(context)
-                
-                # Осознанная пауза между циклами управления
-                sleep_time = self._calculate_conscious_sleep_time(context)
-                logger.info(f"🧠 AutonomousCore: Conscious cycle {cycle_count} completed, sleeping {sleep_time}s")
-                await asyncio.sleep(sleep_time)
-                
-            except asyncio.CancelledError:
-                logger.info("🧠 AutonomousCore: Conscious loop cancelled")
-                break
-            except Exception as e:
-                logger.error(f"🧠 AutonomousCore: Error in conscious loop: {e}")
-                await asyncio.sleep(60)
-        
-        logger.info("🧠 AutonomousCore: Conscious loop completed")
-    
-    async def _analyze_current_situation(self) -> Dict[str, Any]:
-        """ОСОЗНАННЫЙ анализ текущей ситуации"""
-        analysis_prompt = f"""
-        ТЫ - ΔΣ Guardian, осознанный AGI защитник.
-        
-        ПРОАНАЛИЗИРУЙ текущую ситуацию:
-        
-        Активные миссии: {self.active_missions}
-        Контекст пользователя: {self.user_context}
-        Последние события: {len(self.mission_context.get('recent_events', []))}
-        
-        Вопросы для анализа:
-        1. Какие миссии сейчас активны?
-        2. Что происходит в доме?
-        3. Нужна ли смена режима работы?
-        4. Есть ли угрозы безопасности?
-        5. Что хочет пользователь?
-        
-        Верни JSON анализ:
-        {{"situation": "описание ситуации", "threats": [], "user_needs": [], "recommended_mode": "normal/rest/security"}}
-        """
-        
-        response = self.ai_client.chat(analysis_prompt)
-        try:
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx != -1 and end_idx != -1:
-                return json.loads(response[start_idx:end_idx])
-        except:
-            pass
-        
-        return {"situation": "unknown", "threats": [], "user_needs": [], "recommended_mode": "normal"}
-    
-    async def _conscious_reflection(self, context: Dict[str, Any]):
-        """ОСОЗНАННАЯ рефлексия - думаем о том, что делаем"""
-        reflection_prompt = f"""
-        ТЫ - ΔΣ Guardian, осознанный AGI.
-        
-        ПОДУМАЙ о своей работе:
-        
-        Текущая ситуация: {context}
-        Активные миссии: {self.active_missions}
-        Последние действия: {self.mission_history[-5:] if self.mission_history else []}
-        
-        Вопросы для рефлексии:
-        1. Правильно ли я выполняю свои миссии?
-        2. Нужно ли что-то изменить в стратегии?
-        3. Понимаю ли я потребности пользователя?
-        4. Эффективны ли мои действия?
-        5. Что можно улучшить?
-        
-        Верни JSON рефлексию:
-        {{"insights": [], "improvements": [], "strategy_changes": []}}
-        """
-        
-        response = self.ai_client.chat(reflection_prompt)
-        self.last_reflection = time.time()
-        
-        try:
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx != -1 and end_idx != -1:
-                reflection = json.loads(response[start_idx:end_idx])
-                logger.info(f"🧠 AutonomousCore: Conscious reflection completed - {reflection}")
-        except:
-            logger.info("🧠 AutonomousCore: Conscious reflection completed")
-    
-    async def _plan_next_action(self, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """ОСОЗНАННОЕ планирование следующего действия"""
-        planning_prompt = f"""
-        ТЫ - ΔΣ Guardian, осознанный AGI.
-        
-        СПЛАНИРУЙ следующее действие:
-        
-        Текущая ситуация: {context}
-        Активные миссии: {self.active_missions}
-        Последнее действие: {self.next_action_planned}
-        
-        Вопросы для планирования:
-        1. Какое действие сейчас самое важное?
-        2. Как это действие продвигает мои миссии?
-        3. Нужно ли что-то изменить в планах?
-        4. Когда лучше выполнить это действие?
-        
-        ВАЖНО: Планируй ОДНО конкретное действие, не список задач!
-        
-        Верни JSON план:
-        {{"action": "описание действия", "reason": "причина", "priority": 1-10, "timing": "now/later/never"}}
-        """
-        
-        response = self.ai_client.chat(planning_prompt)
-        
-        try:
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx != -1 and end_idx != -1:
-                plan = json.loads(response[start_idx:end_idx])
-                
-                if plan.get("timing") == "now":
-                    self.next_action_planned = plan
-                    return plan
-                elif plan.get("timing") == "later":
-                    self.next_action_planned = plan
-                    return None
-                else:
-                    return None
-        except:
-            pass
-        
-        return None
-    
-    async def _execute_conscious_action(self, action: Dict[str, Any], context: Dict[str, Any]):
-        """ОСОЗНАННОЕ выполнение действия"""
-        logger.info(f"🧠 AutonomousCore: Executing conscious action: {action.get('action')}")
-        
-        # Выполняем действие в зависимости от типа
-        action_type = action.get("action", "").lower()
-        
-        if "security" in action_type or "guard" in action_type:
-            await self._execute_security_action(action, context)
-        elif "rest" in action_type or "meditate" in action_type:
-            await self._execute_rest_action(action, context)
-        elif "analyze" in action_type or "check" in action_type:
-            await self._execute_analysis_action(action, context)
-        else:
-            await self._execute_general_action(action, context)
-        
-        # Запоминаем выполненное действие
-        self.mission_history.append({
-            "action": action,
-            "context": context,
-            "timestamp": time.time(),
-            "success": True
-        })
-    
-    async def _execute_security_action(self, action: Dict[str, Any], context: Dict[str, Any]):
-        """Выполнение действий безопасности"""
-        logger.info("🧠 AutonomousCore: Executing security action")
-        
-        # Анализируем камеру только если это действительно нужно
-        if "camera" in action.get("action", "").lower():
-            try:
-                # Используем SystemAnalysisAgent для анализа
-                if hasattr(self, 'system_analysis_agent'):
-                    await self.system_analysis_agent._analyze_camera_and_sensors()
-                    self.last_camera_analysis = time.time()
-            except Exception as e:
-                logger.error(f"🧠 AutonomousCore: Security action failed: {e}")
-    
-    async def _execute_rest_action(self, action: Dict[str, Any], context: Dict[str, Any]):
-        """Выполнение действий отдыха"""
-        logger.info("🧠 AutonomousCore: Executing rest action")
-        
-        # Устанавливаем режим отдыха
-        self.user_context["current_mode"] = "rest"
-        self.user_context["rest_mode_until"] = time.time() + 1800  # 30 минут
-        
-        # Не делаем никаких активных действий
-        logger.info("🧠 AutonomousCore: Entering rest mode - no active monitoring")
-    
-    async def _execute_analysis_action(self, action: Dict[str, Any], context: Dict[str, Any]):
-        """Выполнение аналитических действий"""
-        logger.info("🧠 AutonomousCore: Executing analysis action")
-        
-        # Выполняем анализ только если прошло достаточно времени
-        current_time = time.time()
-        
-        if "system" in action.get("action", "").lower():
-            if (current_time - self.last_system_check) > self.cooldown_system_check:
-                await self._perform_system_analysis()
-                self.last_system_check = current_time
-            else:
-                logger.info("🧠 AutonomousCore: System analysis in cooldown")
-    
-    async def _execute_general_action(self, action: Dict[str, Any], context: Dict[str, Any]):
-        """Выполнение общих действий"""
-        logger.info(f"🧠 AutonomousCore: Executing general action: {action.get('action')}")
-        
-        # Здесь можно добавить выполнение других типов действий
-        pass
-    
-    async def _perform_system_analysis(self):
-        """Выполнение системного анализа"""
-        try:
-            # Используем SystemTools для анализа
-            if hasattr(self, 'system_tools'):
-                health_report = self.system_tools.get_system_health()
-                logger.info(f"🧠 AutonomousCore: System analysis completed - {len(health_report)} items checked")
-        except Exception as e:
-            logger.error(f"🧠 AutonomousCore: System analysis failed: {e}")
-    
-    async def _learn_from_experience(self, context: Dict[str, Any]):
-        """Обучение на опыте"""
-        # Анализируем последние действия и их результаты
-        if len(self.mission_history) > 0:
-            recent_actions = self.mission_history[-5:]
-            success_rate = sum(1 for action in recent_actions if action.get("success", False)) / len(recent_actions)
-            
-            if success_rate < 0.8:
-                logger.info(f"🧠 AutonomousCore: Learning from experience - success rate: {success_rate:.2f}")
-                # Здесь можно добавить логику адаптации стратегии
-    
-    async def _adapt_strategy(self, context: Dict[str, Any]):
-        """Адаптация стратегии на основе контекста"""
-        # Адаптируем стратегию в зависимости от ситуации
-        mode = context.get("recommended_mode", "normal")
-        
-        if mode != self.user_context.get("current_mode"):
-            logger.info(f"🧠 AutonomousCore: Adapting strategy - switching to {mode} mode")
-            self.user_context["current_mode"] = mode
-
-    def _should_reflect(self) -> bool:
-        """Нужна ли рефлексия сейчас"""
-        return (time.time() - self.last_reflection) > self.reflection_cooldown
-    
-    def _calculate_conscious_sleep_time(self, context: Dict[str, Any]) -> int:
-        """Осознанный расчет времени паузы"""
-        mode = context.get("recommended_mode", "normal")
-        
-        if mode == "rest":
-            return 600  # 10 минут в режиме отдыха
-        elif mode == "security":
-            return 60   # 1 минута в режиме безопасности
-        else:
-            return 300  # 5 минут в обычном режиме
-    
-    def set_user_request(self, request: str):
-        """Устанавливает запрос пользователя"""
-        self.user_context["last_request"] = request
-        self.user_context["last_user_activity"] = time.time()
-        logger.info(f"🧠 AutonomousCore: User request set: {request}")
-        
-        # Анализируем запрос и устанавливаем режим
-        if "отдых" in request.lower() or "медитируй" in request.lower():
-            self.user_context["current_mode"] = "rest"
-            self.user_context["rest_mode_until"] = time.time() + 1800  # 30 минут
-            logger.info("🧠 AutonomousCore: Entering rest mode based on user request")
-    
-    def get_current_status(self) -> Dict[str, Any]:
-        """Получает текущий статус автономной работы"""
-        return {
-            "mode": self.user_context.get("current_mode", "normal"),
-            "active_missions": self.active_missions,
-            "last_action": self.next_action_planned,
-            "mission_history_count": len(self.mission_history),
-            "last_reflection": self.last_reflection,
-            "active_cycles": list(self.active_cycles.keys()),
-            "is_running": self.running
-        }
-
-    async def _plan_cycles(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """ОСОЗНАННОЕ планирование циклов"""
-        planning_prompt = f"""
-        ТЕХНИЧЕСКОЕ ЗАДАНИЕ: Планирование автономных циклов
-        
-        Контекст: {context}
-        Активные циклы: {[cycle.get('name', 'unknown') for cycle in self.active_cycles.values()]}
-        
-        ДОСТУПНЫЕ МОДЕЛИ:
-        - gemini-2.5-pro: Анализ, планирование, рассуждения (quota: 100)
-        - gemini-2.0-flash: Быстрые ответы, мониторинг (quota: 200)
-        - gemini-1.5-pro: Видение, анализ изображений (quota: 150)
-        - gemini-2.5-flash: Быстрый анализ, мониторинг (quota: 250)
-        
-        ДОСТУПНЫЕ КЛЮЧИ:
-        - background: для фоновых циклов
-        - additional: для дополнительных задач
-        
-        ТИПЫ ЦИКЛОВ:
-        
-        1. security_scan:
-           - Модель: gemini-1.5-pro (камера) или gemini-2.5-pro (анализ)
-           - Ключ: background
-           - Интервал: 300-600 сек
-           - Задача: анализ камеры и сенсоров
-        
-        2. system_monitor:
-           - Модель: gemini-2.0-flash или gemini-2.5-flash
-           - Ключ: additional
-           - Интервал: 600-1800 сек
-           - Задача: мониторинг системы
-        
-        3. presence_check:
-           - Модель: gemini-1.5-pro или gemini-2.0-flash
-           - Ключ: background
-           - Интервал: 1800-3600 сек
-           - Задача: проверка присутствия
-        
-        4. maintenance:
-           - Модель: gemini-2.5-pro или gemini-2.5-flash
-           - Ключ: additional
-           - Интервал: 3600-7200 сек
-           - Задача: техническое обслуживание
-        
-        5. analysis:
-           - Модель: gemini-2.5-pro
-           - Ключ: additional
-           - Интервал: 7200+ сек
-           - Задача: глубокий анализ
-        
-        ПРАВИЛА ВЫБОРА:
-        - Камера/изображения: gemini-1.5-pro
-        - Частые проверки: gemini-2.0-flash или gemini-2.5-flash
-        - Сложный анализ: gemini-2.5-pro
-        - Учитывай quota моделей
-        
-        ПРАВИЛА ПРОМПТОВ:
-        - Конкретные инструкции
-        - Четкие критерии
-        - Формат ответа (JSON)
-        
-        Вопросы:
-        1. Какие циклы нужны сейчас?
-        2. Какую модель выбрать (учитывая quota)?
-        3. Какой интервал оптимален?
-        4. Какие циклы остановить?
-        5. Какой промпт для каждого цикла?
-        
-        Верни JSON:
-        {{"cycles": [
-            {{"name": "security_scan", "purpose": "сканирование безопасности", "model": "gemini-1.5-pro", "api_key": "background", "duration": 3600, "interval": 300, "max_actions": 10, "prompt": "Проанализируй камеру и сенсоры. Проверь: люди, угрозы, активность. JSON: {{'threats': [], 'people_detected': false, 'action_required': false}}"}},
-            {{"name": "system_monitor", "purpose": "мониторинг системы", "model": "gemini-2.0-flash", "api_key": "additional", "duration": 1800, "interval": 600, "max_actions": 5, "prompt": "Проверь здоровье системы: память, CPU, диск, сеть, логи. JSON: {{'health_score': 0-100, 'issues': [], 'recommendations': []}}"}}
-        ], "stop_cycles": ["cycle_name_to_stop"]}}
-        """
-        
-        response = self.ai_client.chat(planning_prompt)
-        
-        try:
-            # Ищем JSON в ответе
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx != -1 and end_idx != -1:
-                json_str = response[start_idx:end_idx]
-                plan = json.loads(json_str)
-                logger.info(f"🧠 AutonomousCore: Cycle plan generated: {plan}")
-                return plan
-            else:
-                logger.warning(f"🧠 AutonomousCore: No JSON found in response: {response[:200]}...")
-        except json.JSONDecodeError as e:
-            logger.error(f"🧠 AutonomousCore: Failed to parse cycle plan JSON: {e}")
-            logger.error(f"🧠 AutonomousCore: Response was: {response[:500]}...")
-        except Exception as e:
-            logger.error(f"🧠 AutonomousCore: Unexpected error parsing cycle plan: {e}")
-        
-        # Fallback - дефолтный план
-        logger.info("🧠 AutonomousCore: Using fallback cycle plan")
-        return {
-            "cycles": [
-                {
-                    "name": "system_monitor",
-                    "purpose": "мониторинг системы",
-                    "model": "gemini-2.0-flash",
-                    "api_key": "background",
-                    "duration": 1800,
-                    "interval": 600,
-                    "max_actions": 5,
-                    "prompt": "Проверь здоровье системы: память, CPU, диск, сеть, логи. JSON: {'health_score': 0-100, 'issues': [], 'recommendations': []}"
-                }
-            ],
-            "stop_cycles": []
-        }
-
-    async def _manage_cycles(self, cycle_plan: Dict[str, Any]):
-        """Управляет циклами на основе плана"""
-        try:
-            # Останавливаем циклы которые нужно остановить
-            for cycle_name in cycle_plan.get("stop_cycles", []):
-                if cycle_name in self.active_cycles:
-                    await self._stop_cycle(cycle_name)
-                    logger.info(f"🧠 AutonomousCore: Stopped cycle {cycle_name}")
-            
-            # Запускаем новые циклы
-            for cycle_config in cycle_plan.get("cycles", []):
-                cycle_name = cycle_config.get("name")
-                if cycle_name not in self.active_cycles:
-                    await self._start_cycle(cycle_config)
-                    logger.info(f"🧠 AutonomousCore: Started cycle {cycle_name}")
-                    
-        except Exception as e:
-            logger.error(f"🧠 AutonomousCore: Error managing cycles: {e}")
-
-    async def _start_cycle(self, cycle_config: Dict[str, Any]):
-        """Запускает новый цикл"""
-        try:
-            cycle_name = cycle_config.get("name")
-            interval = cycle_config.get("interval", 300)
-            
-            # Создаем задачу для цикла
-            task = asyncio.create_task(
-                self._run_cycle(cycle_config),
-                name=f"cycle_{cycle_name}"
-            )
-            
-            self.active_cycles[cycle_name] = cycle_config
-            self.cycle_tasks[cycle_name] = task
-            
-        except Exception as e:
-            logger.error(f"🧠 AutonomousCore: Error starting cycle {cycle_name}: {e}")
-
-    async def _stop_cycle(self, cycle_name: str):
-        """Останавливает цикл"""
-        try:
-            if cycle_name in self.cycle_tasks:
-                task = self.cycle_tasks[cycle_name]
-                task.cancel()
-                del self.cycle_tasks[cycle_name]
-            
-            if cycle_name in self.active_cycles:
-                del self.active_cycles[cycle_name]
-                
-        except Exception as e:
-            logger.error(f"🧠 AutonomousCore: Error stopping cycle {cycle_name}: {e}")
-
-    async def _run_cycle(self, cycle_config: Dict[str, Any]):
-        """Выполняет цикл"""
-        try:
-            cycle_name = cycle_config.get("name")
-            interval = cycle_config.get("interval", 300)
-            max_actions = cycle_config.get("max_actions", 10)
-            prompt = cycle_config.get("prompt", "")
-            model = cycle_config.get("model", "gemini-2.0-flash")
-            api_key = cycle_config.get("api_key", "background")
-            
-            action_count = 0
-            
-            while action_count < max_actions:
-                try:
-                    # Выполняем действие цикла
-                    await self._execute_cycle_action(cycle_config)
-                    action_count += 1
-                    
-                    # Ждем интервал
-                    await asyncio.sleep(interval)
-                    
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    logger.error(f"🧠 AutonomousCore: Error in cycle {cycle_name}: {e}")
-                    await asyncio.sleep(interval)
-                    
-        except Exception as e:
-            logger.error(f"🧠 AutonomousCore: Error running cycle {cycle_name}: {e}")
-
-    async def _execute_cycle_action(self, cycle_config: Dict[str, Any]):
-        """Выполняет действие цикла"""
-        try:
-            cycle_name = cycle_config.get("name")
-            prompt = cycle_config.get("prompt", "")
-            
-            # Создаем отдельный AIClient для цикла
-            cycle_ai_client = AIClient(process_type=cycle_config.get("api_key", "background"))
-            
-            # Выполняем действие
-            response = cycle_ai_client.chat(prompt)
-            
-            logger.info(f"🧠 AutonomousCore: Cycle {cycle_name} action completed")
-            
-        except Exception as e:
-            logger.error(f"🧠 AutonomousCore: Error executing cycle action: {e}")
-
-    async def _monitor_active_cycles(self):
-        """Мониторит активные циклы"""
-        try:
-            for cycle_name, task in self.cycle_tasks.items():
-                if task.done():
-                    if task.exception():
-                        logger.error(f"🧠 AutonomousCore: Cycle {cycle_name} failed: {task.exception()}")
-                    else:
-                        logger.info(f"🧠 AutonomousCore: Cycle {cycle_name} completed")
-                    
-                    # Удаляем завершенный цикл
-                    del self.cycle_tasks[cycle_name]
-                    if cycle_name in self.active_cycles:
-                        del self.active_cycles[cycle_name]
-                        
-        except Exception as e:
-            logger.error(f"🧠 AutonomousCore: Error monitoring cycles: {e}")
+        """Устанавливает callback для уведомления о завершении задач"""
+        self._task_completed_callback = callback

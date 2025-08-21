@@ -21,26 +21,14 @@ logger = Logger()
 class GeminiClient:
     """Упрощенный класс для работы с Gemini API"""
     
-    def __init__(self, process_type: str = "chat"):
+    def __init__(self):
         """Инициализация Gemini клиента"""
         self.config = Config()
         self.error_handler = ErrorHandler()
-        self.process_type = process_type
         
-        # Управление ключами и моделями
-        self.available_keys = [
-            self.config.get_gemini_api_key("chat"),
-            self.config.get_gemini_api_key("background"), 
-            self.config.get_gemini_api_key("additional")
-        ]
-        # Убираем дубликаты и None значения
-        self.available_keys = list(set([k for k in self.available_keys if k]))
-        
-        self.current_key_index = 0
-        self.current_model_index = 0
-        
-        # Инициализируем Gemini с первым ключом
-        self._configure_gemini_with_current_key()
+        # Инициализируем Gemini
+        api_key = self.config.get_gemini_api_key()
+        genai.configure(api_key=api_key)
         
         # Google Cloud Vision API (опционально)
         self.vision_client = None
@@ -68,65 +56,7 @@ class GeminiClient:
             {'name': 'gemini-1.5-pro', 'quota': 150}
         ]
 
-    def _configure_gemini_with_current_key(self):
-        """Настроить Gemini с текущим ключом"""
-        if self.available_keys:
-            current_key = self.available_keys[self.current_key_index]
-            genai.configure(api_key=current_key)
-            logger.info(f"🔑 Configured Gemini with key {self.current_key_index + 1}/{len(self.available_keys)}")
-        else:
-            logger.error("❌ No available API keys!")
-    
-    def _switch_to_next_key(self):
-        """Переключиться на следующий ключ"""
-        if len(self.available_keys) > 1:
-            self.current_key_index = (self.current_key_index + 1) % len(self.available_keys)
-            self.current_model_index = 0  # Сбрасываем модель к лучшей
-            self._configure_gemini_with_current_key()
-            logger.info(f"🔑 Switched to API key {self.current_key_index + 1}/{len(self.available_keys)}")
-            return True
-        else:
-            logger.warning("⚠️ Only one API key available - cannot switch")
-            return False
-    
-    def _get_current_model(self):
-        """Получить текущую модель"""
-        return self.models[self.current_model_index]['name']
-    
-    def _switch_to_next_model(self):
-        """Переключиться на следующую модель"""
-        # Пропускаем модели с низким качеством если есть лучшие альтернативы
-        current_quota = self.models[self.current_model_index]['quota']
-        
-        # Ищем следующую модель с похожим или лучшим качеством
-        for i in range(1, len(self.models)):
-            next_index = (self.current_model_index + i) % len(self.models)
-            next_quota = self.models[next_index]['quota']
-            
-            # Если следующая модель имеет похожий или лучший лимит, используем её
-            if next_quota >= current_quota * 0.5:  # Не падаем слишком сильно
-                self.current_model_index = next_index
-                model_name = self.models[self.current_model_index]['name']
-                logger.info(f"🚀 Switched to model: {model_name} (quota: {next_quota})")
-                return model_name
-        
-        # Если не нашли подходящую, просто переходим к следующей
-        self.current_model_index = (self.current_model_index + 1) % len(self.models)
-        model_name = self.models[self.current_model_index]['name']
-        logger.info(f"🚀 Using model: {model_name}")
-        return model_name
-    
-    def _handle_quota_error(self):
-        """Обработать ошибку квоты - сначала ключ, потом модель"""
-        logger.warning("⚠️ Quota exceeded, switching...")
-        
-        # Сначала пробуем переключить ключ
-        if self._switch_to_next_key():
-            return True
-        
-        # Если ключи закончились, переключаем модель
-        self._switch_to_next_model()
-        return True
+        self.current_model_index = 0  # gemini-2.0-flash
     
     def _parse_gemini_response(self, response) -> str:
         """УНИВЕРСАЛЬНЫЙ ПАРСЕР - обрабатывает любой формат ответа Gemini"""
@@ -180,6 +110,33 @@ class GeminiClient:
             logger.error(f"❌ Error parsing Gemini response: {e}")
             return f"❌ Error parsing response: {str(e)}"
     
+    def _get_current_model(self):
+        """Получить текущую модель"""
+        return self.models[self.current_model_index]['name']
+    
+    def _switch_to_next_model(self):
+        """Переключиться на следующую модель"""
+        # Пропускаем модели с низким качеством если есть лучшие альтернативы
+        current_quota = self.models[self.current_model_index]['quota']
+        
+        # Ищем следующую модель с похожим или лучшим качеством
+        for i in range(1, len(self.models)):
+            next_index = (self.current_model_index + i) % len(self.models)
+            next_quota = self.models[next_index]['quota']
+            
+            # Если следующая модель имеет похожий или лучший лимит, используем её
+            if next_quota >= current_quota * 0.5:  # Не падаем слишком сильно
+                self.current_model_index = next_index
+                model_name = self.models[self.current_model_index]['name']
+                logger.info(f"🚀 Switched to model: {model_name} (quota: {next_quota})")
+                return model_name
+        
+        # Если не нашли подходящую, просто переходим к следующей
+        self.current_model_index = (self.current_model_index + 1) % len(self.models)
+        model_name = self.models[self.current_model_index]['name']
+        logger.info(f"🚀 Using model: {model_name}")
+        return model_name
+    
     def switch_to_model(self, model_name: str) -> bool:
         """Переключиться на конкретную модель"""
         for i, model in enumerate(self.models):
@@ -191,7 +148,7 @@ class GeminiClient:
         return False
     
     def get_model_status(self) -> Dict[str, Any]:
-        """Получить статус моделей и ключей"""
+        """Получить статус моделей"""
         current_model = self._get_current_model()
         
         available_models = []
@@ -209,10 +166,7 @@ class GeminiClient:
             'model_index': self.current_model_index,
             'total_models': len(self.models),
             'available_models': available_models,
-            'model_errors': 0,
-            'current_key_index': self.current_key_index,
-            'total_keys': len(self.available_keys),
-            'keys_available': len(self.available_keys) > 0
+            'model_errors': 0
         }
     
     def get_current_model(self) -> str:
@@ -292,20 +246,13 @@ class GeminiClient:
                 error_msg = error_msg[:200] + "..."
             logger.error(f"❌ Gemini streaming error: {error_msg}")
             
-            # Fallback с защитой от бесконечной рекурсии
+            # Простой fallback - переключаем модель и пробуем еще раз
             if "429" in error_msg or "quota" in error_msg.lower():
-                logger.warning("⚠️ Quota exceeded, switching...")
-                self._handle_quota_error()
-                # Пробуем еще раз с новыми настройками
-                try:
-                    model_name = self._get_current_model()
-                    model = genai.GenerativeModel(model_name)
-                    response = model.generate_content(full_prompt)
-                    result = self._parse_gemini_response(response)
-                    yield result
-                except Exception as retry_error:
-                    logger.error(f"❌ Retry failed: {retry_error}")
-                    yield f"❌ All API keys and models exhausted: {error_msg}"
+                logger.warning("⚠️ Quota exceeded, switching model...")
+                self._switch_to_next_model()
+                # Рекурсивно пробуем с новой моделью
+                async for chunk in self.generate_streaming_response(system_prompt, user_message, context, user_profile):
+                    yield chunk
             else:
                 yield f"❌ Error: {error_msg}"
     
@@ -358,19 +305,11 @@ class GeminiClient:
                 error_msg = error_msg[:200] + "..."
             logger.error(f"❌ Chat error: {error_msg}")
             
-            # Fallback с защитой от бесконечной рекурсии
+            # Простой fallback
             if "429" in error_msg or "quota" in error_msg.lower():
-                logger.warning("⚠️ Quota exceeded, switching...")
-                self._handle_quota_error()
-                # Пробуем еще раз с новыми настройками
-                try:
-                    model_name = self._get_current_model()
-                    model = genai.GenerativeModel(model_name)
-                    response = model.generate_content(full_prompt)
-                    return self._parse_gemini_response(response)
-                except Exception as retry_error:
-                    logger.error(f"❌ Retry failed: {retry_error}")
-                    return f"❌ All API keys and models exhausted: {error_msg}"
+                logger.warning("⚠️ Quota exceeded, switching model...")
+                self._switch_to_next_model()
+                return self.chat(message, user_profile, conversation_context, system_prompt)
             else:
                 return f"❌ Error: {error_msg}"
 

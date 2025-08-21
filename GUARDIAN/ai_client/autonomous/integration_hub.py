@@ -36,6 +36,10 @@ class IntegrationHub:
         self.events: List[SystemEvent] = []
         self.event_lock = asyncio.Lock()
         
+        # ПАМЯТЬ РЕЗУЛЬТАТОВ АНАЛИЗА
+        self.analysis_results: Dict[str, Any] = {}
+        self.analysis_lock = asyncio.Lock()
+        
         # Состояние синхронизации
         self.last_chat_time = 0
         self.last_analysis_time = 0
@@ -87,6 +91,45 @@ class IntegrationHub:
         """Получает общий контекст"""
         async with self.context_lock:
             return self.shared_context.copy()
+    
+    # === ПАМЯТЬ РЕЗУЛЬТАТОВ АНАЛИЗА ===
+    async def save_analysis_result(self, analysis_type: str, result: Dict[str, Any]):
+        """Сохраняет результат анализа в память"""
+        async with self.analysis_lock:
+            self.analysis_results[analysis_type] = {
+                "result": result,
+                "timestamp": time.time(),
+                "ttl": 3600  # 1 час
+            }
+            logger.info(f"🧠 IntegrationHub: Saved analysis result for {analysis_type}")
+    
+    async def get_analysis_result(self, analysis_type: str) -> Optional[Dict[str, Any]]:
+        """Получает результат анализа из памяти"""
+        async with self.analysis_lock:
+            if analysis_type in self.analysis_results:
+                analysis_data = self.analysis_results[analysis_type]
+                # Проверяем TTL
+                if time.time() - analysis_data["timestamp"] < analysis_data["ttl"]:
+                    return analysis_data["result"]
+                else:
+                    # Удаляем устаревший результат
+                    del self.analysis_results[analysis_type]
+            return None
+    
+    async def get_all_analysis_results(self) -> Dict[str, Any]:
+        """Получает все результаты анализа"""
+        async with self.analysis_lock:
+            # Очищаем устаревшие результаты
+            current_time = time.time()
+            expired_keys = []
+            for key, data in self.analysis_results.items():
+                if current_time - data["timestamp"] > data["ttl"]:
+                    expired_keys.append(key)
+            
+            for key in expired_keys:
+                del self.analysis_results[key]
+            
+            return {k: v["result"] for k, v in self.analysis_results.items()}
     
     # === СИНХРОНИЗАЦИЯ ЧАТА ===
     async def on_chat_message(self, username: str, message: str, ai_response: str):
@@ -301,9 +344,9 @@ class IntegrationHub:
         """Запускает цикл синхронизации"""
         logger.info("🧠 IntegrationHub: Starting synchronization loop")
         
-        # ЗАПУСКАЕМ АНАЛИЗ СРАЗУ ПРИ СТАРТЕ!
-        logger.info("🧠 IntegrationHub: Running initial analysis...")
-        await self.trigger_periodic_analysis()
+        # УБИРАЕМ АВТОМАТИЧЕСКИЙ АНАЛИЗ - AutonomousCore сам решает когда анализировать
+        # logger.info("🧠 IntegrationHub: Running initial analysis...")
+        # await self.trigger_periodic_analysis()
         
         while True:
             try:
@@ -314,13 +357,13 @@ class IntegrationHub:
                 if self.autonomous_core:
                     await self.autonomous_core.update_shared_context(context)
                 
-                # Проверяем необходимость анализа
-                time_since_analysis = time.time() - self.last_analysis_time
-                if time_since_analysis > 600:  # 10 минут вместо 5
-                    await self.trigger_periodic_analysis()
+                # УБИРАЕМ АВТОМАТИЧЕСКИЙ АНАЛИЗ - AutonomousCore сам решает
+                # time_since_analysis = time.time() - self.last_analysis_time
+                # if time_since_analysis > 600:  # 10 минут
+                #     await self.trigger_periodic_analysis()
                 
                 # Пауза между синхронизациями
-                await asyncio.sleep(60)  # 1 минута вместо 30 секунд
+                await asyncio.sleep(300)  # 5 минут вместо 1 минуты
                 
             except Exception as e:
                 logger.error(f"🧠 IntegrationHub: Error in synchronization loop: {e}")
@@ -334,6 +377,9 @@ class IntegrationHub:
             
             context = await self.get_synchronized_context()
             analysis_result = await self.system_agent.synthesize_with_autonomous_context(context)
+            
+            # СОХРАНЯЕМ РЕЗУЛЬТАТ В ПАМЯТЬ
+            await self.save_analysis_result("periodic_analysis", analysis_result)
             
             # Создаем событие периодического анализа
             periodic_event = SystemEvent(
@@ -350,7 +396,7 @@ class IntegrationHub:
             await self.add_event(periodic_event)
             self.last_analysis_time = time.time()
             
-            logger.info(f"🧠 IntegrationHub: Periodic analysis completed")
+            logger.info(f"🧠 IntegrationHub: Periodic analysis completed and saved")
             
         except Exception as e:
             logger.error(f"🧠 IntegrationHub: Error in periodic analysis: {e}")
