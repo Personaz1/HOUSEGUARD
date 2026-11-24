@@ -35,7 +35,16 @@ app.log.*
 .vscode/
 .idea/
 
-# Docker/minio persistent data
+# Local memory, conversations, sessions and user profiles
+GUARDIAN/memory/*.json
+GUARDIAN/memory/private_chats/
+GUARDIAN/memory/user_profiles/
+GUARDIAN/sessions.json
+GUARDIAN/guardian_sandbox/
+GUARDIAN/static/images/Screenshot*
+GUARDIAN/templates/static/images/Screenshot*
+
+# Runtime and local object-store data
 SMARTHOUSE/infra/minio/data/
 
 # Large local artifacts
