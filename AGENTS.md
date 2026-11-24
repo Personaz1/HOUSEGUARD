@@ -1,0 +1,3 @@
+# Agent instructions
+
+Personal assistant and smart-home research. Treat all memory, conversations, profiles, images and household telemetry as private user data; never commit them or copy them into issues, logs, prompts or examples. Use synthetic fixtures. Do not access or modify live memory stores without explicit authorization. Consequential home/device actions require human approval. Distinguish proposed agent behavior from implemented and verified behavior.
