@@ -45,6 +45,7 @@ GUARDIAN/static/images/Screenshot*
 GUARDIAN/templates/static/images/Screenshot*
 
 # Runtime and local object-store data
+infra/minio/data/
 SMARTHOUSE/infra/minio/data/
 
 # Large local artifacts
