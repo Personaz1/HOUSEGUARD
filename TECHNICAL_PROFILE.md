@@ -77,3 +77,6 @@ I am open to technical roles involving AI systems design, agent workflows, autom
 ## Research context
 
 The broader portfolio is also maintained as a long-horizon research environment. Its AGI-oriented notes preserve cross-project connections, open questions, failed approaches, and provenance for future study. That research purpose is complementary to — not a substitute for — the concrete engineering evidence in each repository.
+
+
+Research archive: [Future Intelligence Archive](https://github.com/Personaz1/future-intelligence-archive) — public research notes, provenance, project map, and preservation policy.
