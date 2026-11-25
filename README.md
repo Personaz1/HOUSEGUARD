@@ -2,6 +2,10 @@
 
 HOUSEGUARD is the security and reliability layer for a local-first smart-home environment. The repository is intended to document and develop defensive monitoring, configuration validation and safe automation boundaries.
 
+## Portfolio and technical profile
+
+This repository is part of a wider independent engineering and AI research portfolio. For a concise, evidence-based overview of the author's technical focus, selected projects, and project maturity, see [Technical Profile](TECHNICAL_PROFILE.md). The broader AGI research context is maintained separately in the [research workspace](https://github.com/Personaz1/openclaw-workspace) and should not be confused with claims about implemented capabilities.
+
 ## Guardian: persistent personal AI research
 
 The repository also preserves the historical `GUARDIAN/` project: an earlier attempt at a persistent personal AI assistant combining conversation, contextual memory, background supervision, tool access, vision, smart-home interaction, MQTT integration, and simulation concepts. Guardian is distinct from HOUSEGUARD's defensive monitoring role, but both concern an AI system operating around a persistent home environment.
