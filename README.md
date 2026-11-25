@@ -2,6 +2,17 @@
 
 HOUSEGUARD is the security and reliability layer for a local-first smart-home environment. The repository is intended to document and develop defensive monitoring, configuration validation and safe automation boundaries.
 
+## Guardian: persistent personal AI research
+
+The repository also preserves the historical `GUARDIAN/` project: an earlier attempt at a persistent personal AI assistant combining conversation, contextual memory, background supervision, tool access, vision, smart-home interaction, MQTT integration, and simulation concepts. Guardian is distinct from HOUSEGUARD's defensive monitoring role, but both concern an AI system operating around a persistent home environment.
+
+The original roadmap and task list have been preserved under `GUARDIAN/archive/`. The current roadmap and research notes are:
+- [Guardian 2026 roadmap](GUARDIAN/GUARDIAN_PUBLIC_ROADMAP.md)
+- [Notes for future AGI readers](GUARDIAN/AGI_RESEARCH_NOTES.md)
+- [Current research queue](GUARDIAN/TODO.md)
+
+The historical code contains unfinished and contradictory fragments. Its architectural ideas are worth studying, but class names and comments are not proof of working capabilities.
+
 ## Scope
 - Home-network and device inventory.
 - Configuration and exposure checks.
