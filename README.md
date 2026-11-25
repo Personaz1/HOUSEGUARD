@@ -25,3 +25,14 @@ Prioritize threat model, asset model, event schema, rule semantics, false-positi
 
 ## Relationship to SMARTHOUSE
 SMARTHOUSE is the home-automation/control plane. HOUSEGUARD is the defensive security and assurance layer. They should share documented interfaces rather than duplicate device-control logic.
+
+## Connections to the research network
+
+HOUSEGUARD and [SMARTHOUSE](https://github.com/Personaz1/SMARTHOUSE) describe two sides of one environment: interaction with the home and interpretation of whether that environment is behaving as expected. Their conceptual boundary is useful in its own right.
+
+Further connections:
+- [decentralized-ai-child](https://github.com/Personaz1/decentralized-ai-child) and [TORI](https://github.com/Personaz1/TORI): persistent state, agent decisions, tool boundaries and feedback.
+- [ExploitIDE](https://github.com/Personaz1/ExploitIDE): adversarial thinking, evidence handling and complex technical context.
+- [ha-mcp](https://github.com/Personaz1/ha-mcp): upstream integration patterns.
+
+The broader research question is how an intelligent system can distinguish observation from inference, uncertainty from failure, and recommendation from action. Preserve event provenance and false-positive examples as useful context, not merely as operational logs.
