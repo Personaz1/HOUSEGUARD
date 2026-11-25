@@ -1,13 +1,19 @@
 # ΔΣ Guardian — Research Roadmap (2026)
 
 **Last reviewed:** 2026-11-25  
-**Historical origin:** Guardian was developed as an always-available personal AI and smart-environment system before persistent AI agents became a mainstream product category. This roadmap updates the direction without rewriting that history.
+**Historical origin:** The author reports developing Guardian before persistent AI agents became a mainstream product category and before today's mature agent tooling was readily available. He specifically recalls writing the orchestration pipelines and reasoning procedures himself. This is author-provided context; exact chronology and artifacts should be corroborated against repository history and source files.
 
 ## Purpose
 
 Guardian is a personal, persistent AI system that can understand ongoing context, use tools, observe a digital and physical environment, carry out bounded tasks, and learn from outcomes. It is not merely a chatbot, a smart-home dashboard, or a wrapper around one model provider.
 
 The original ambition remains relevant: a system that is present over time, remembers, notices, plans, coordinates subsystems, and can interact with the world. Modern models and agent platforms change what can be delegated to the model; they do not remove the need for a coherent runtime, durable state, explicit permissions, observability, and evaluation.
+
+## Historical work that must be preserved
+
+Guardian was built in a different tooling environment. According to the author, important orchestration pipelines and reasoning procedures were written manually rather than assembled from today's agent frameworks. This distinction matters: the original pipeline design, prompts, reasoning rules, control flow, intermediate experiments, and failed approaches are primary research artifacts.
+
+Do not overwrite these with modern implementations. Preserve them in their original form, with dates and commit provenance where possible. Any modern rewrite should live beside the historical implementation and explain what changed and why. The author's recollection is a lead for source archaeology, not proof that every remembered component survives in the current tree.
 
 ## What was already present in the early Guardian
 
@@ -52,13 +58,14 @@ A reproducible virtual environment should allow agents to act, receive feedback,
 ## Modernization priorities
 
 1. **Reconstruct before replacing.** Map the actual Guardian modules, imports, entry points, duplicated assets, and current behavior. The old tree contains unfinished and conflicting fragments; document them rather than silently assuming they work.
-2. **Replace obsolete model integrations deliberately.** The project currently references the retired `google-generativeai` Python SDK and an old OpenAI SDK pin. Google recommends `google-genai`; OpenAI recommends the Responses API for new agentic integrations. Migrate behind provider adapters, preserving a stable internal interface and testing each adapter independently.
-3. **Make the model layer provider-neutral.** Model identifiers, context limits, multimodal support, tool calling, structured output, streaming, and reasoning settings belong in provider configuration/capability metadata—not scattered through business logic.
-4. **Separate model reasoning from execution.** Use an explicit task state machine and typed tool contracts. Persist each action request, authorization decision, result, and follow-up observation.
-5. **Treat MCP as an adapter.** Current Home Assistant documentation supports MCP over Streamable HTTP and SSE, with OAuth for authenticated servers. Keep protocol-specific behavior outside Guardian's core domain model.
-6. **Unify memory concepts before choosing infrastructure.** Define what is remembered, why, for how long, how it is corrected, and how it is retrieved. A vector database alone is not a memory architecture.
-7. **Bring simulation forward.** The old fixed-step, seeded simulation idea is strategically important. Make the environment contract independent of any one simulator or home platform.
-8. **Preserve the original design lineage.** Keep dated notes, original prompts, old roadmaps, and failed approaches. Mark modern reinterpretations as later analysis.
+2. **Recover the original reasoning and orchestration.** Inventory hand-written pipelines, prompt chains, reasoning rules, state transitions, and tool-routing logic. Record source paths and commit dates. Preserve originals; annotate rather than normalize or rewrite them.
+3. **Replace obsolete model integrations deliberately.** The project currently references the retired `google-generativeai` Python SDK and an old OpenAI SDK pin. Google recommends `google-genai`; OpenAI recommends the Responses API for new agentic integrations. Migrate behind provider adapters, preserving a stable internal interface and testing each adapter independently.
+4. **Make the model layer provider-neutral.** Model identifiers, context limits, multimodal support, tool calling, structured output, streaming, and reasoning settings belong in provider configuration/capability metadata—not scattered through business logic.
+5. **Separate model reasoning from execution.** Use an explicit task state machine and typed tool contracts. Persist each action request, authorization decision, result, and follow-up observation.
+6. **Treat MCP as an adapter.** Current Home Assistant documentation supports MCP over Streamable HTTP and SSE, with OAuth for authenticated servers. Keep protocol-specific behavior outside Guardian's core domain model.
+7. **Unify memory concepts before choosing infrastructure.** Define what is remembered, why, for how long, how it is corrected, and how it is retrieved. A vector database alone is not a memory architecture.
+8. **Bring simulation forward.** The old fixed-step, seeded simulation idea is strategically important. Make the environment contract independent of any one simulator or home platform.
+9. **Preserve the original design lineage.** Keep dated notes, original prompts, old roadmaps, and failed approaches. Mark modern reinterpretations as later analysis.
 
 ## Research questions
 
