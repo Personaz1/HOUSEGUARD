@@ -18,6 +18,10 @@ Guardian should be read as an early attempt to assemble a persistent personal ag
 
 Do not retroactively claim that Guardian anticipated every feature of today's agent platforms. The meaningful historical claim is narrower: the project was already exploring the combination of continuity, memory, tools, autonomous task concepts, and smart-home interaction, while its author was building orchestration and reasoning mechanisms directly rather than relying on today's mature agent tooling.
 
+## Source archaeology
+
+A dated reconstruction of the original reasoning procedures, ReAct loop, sleeping/wake-up architecture, and Git chronology is maintained in [HISTORY_AND_SOURCE_MAP.md](HISTORY_AND_SOURCE_MAP.md). Treat it as a source map; immutable historical commits remain the primary evidence.
+
 ## Evidence visible in the repository
 
 The following artifacts are useful starting points:
