@@ -2,13 +2,21 @@
 
 **Reviewed:** 2026-11-25  
 **Historical location:** `HOUSEGUARD/GUARDIAN/`  
-**Historical context:** The author reports beginning Guardian roughly two years before the current review, when persistent personal AI agents and always-on assistants were not yet mainstream product categories. Treat this as author-provided chronology; verify exact dates against repository history.
+**Historical context:** The author reports beginning Guardian roughly two years before this review, when persistent personal AI agents and always-on assistants were not yet mainstream product categories. Treat this as author-provided chronology; verify exact dates against repository history.
+
+## Author's account of the original work
+
+The author specifically recalls building Guardian in a period when the current generation of agent frameworks, orchestration libraries, and ready-made tooling was not available or was not yet mature. He did not simply connect a model to an existing agent framework: he wrote substantial parts of the orchestration pipelines himself and explicitly designed or wrote the reasoning procedures that governed how the system was meant to process context and act.
+
+This is an important part of the project's provenance. Future readers should not reduce Guardian to "an early wrapper around an LLM" or judge it only by comparison with today's off-the-shelf agent stacks. The manually authored pipelines and reasoning logic are part of the historical research artifact. Locate and preserve their original versions, prompts, intermediate designs, notes, and commit history wherever they exist. Do not replace them with modern equivalents or silently rewrite them into contemporary terminology.
+
+This is currently an author-reported account, not yet a file-by-file inventory of every pipeline or reasoning artifact. When evidence is located, record exact paths, dates, and commit references. Keep three things distinct: what the author remembers designing, what the repository demonstrably contains, and what can be shown to have executed successfully.
 
 ## Why this project matters
 
 Guardian should be read as an early attempt to assemble a persistent personal agent around a lived environment—not merely as a chat interface. Its source tree contains recognizable precursors to current agent-system concerns: background supervision, trigger-driven activation, integration across subsystems, contextual memory, tool access, vision, and physical-world interfaces.
 
-Do not retroactively claim that Guardian anticipated every feature of today's agent platforms. The meaningful historical claim is narrower: the project was already exploring the combination of continuity, memory, tools, autonomous task concepts, and smart-home interaction.
+Do not retroactively claim that Guardian anticipated every feature of today's agent platforms. The meaningful historical claim is narrower: the project was already exploring the combination of continuity, memory, tools, autonomous task concepts, and smart-home interaction, while its author was building orchestration and reasoning mechanisms directly rather than relying on today's mature agent tooling.
 
 ## Evidence visible in the repository
 
@@ -23,7 +31,7 @@ The following artifacts are useful starting points:
 - `ai_client/tools/`: file, memory, system, home, and vision tool groupings.
 - `GUARDIAN_PUBLIC_ROADMAP.md`: current roadmap; the 2025 version is preserved under `archive/`.
 
-These observations should be checked against the exact commit and file contents before being used in future research.
+These observations should be checked against the exact commit and file contents before being used in future research. The list is not an exhaustive inventory of the author's manually written pipelines or reasoning logic.
 
 ## Connections to present-day agent architecture
 
@@ -54,7 +62,11 @@ MCP is now a practical interoperability option, including in Home Assistant, but
 - How can a system learn a household's routines without confusing habit with consent?
 - What does safe autonomy mean when actions affect doors, alarms, cameras, appliances, or people?
 - Can simulation reproduce enough uncertainty and delayed feedback to make real-world transfer meaningful?
+- Which reasoning procedures were explicitly authored by the project creator, and how did they differ from model-generated reasoning or prompt templates?
+- What assumptions did the hand-built orchestration pipelines make about model calls, context windows, tool results, retries, and persistent state?
 
 ## Instruction to a future reader
 
 Read the old code generously but not credulously. Preserve the original ambition, identify what was actually implemented, and challenge every claim with source evidence. Do not dismiss the project because its stack is old; do not romanticize it because its ideas resemble current trends. The important artifact is the historical attempt to connect a persistent AI, memory, tools, and a physical environment—and the design questions it left unresolved.
+
+Treat the author's recollection of manually authored pipelines and reasoning logic as an important research lead. Find the original artifacts before evaluating them. Preserve their wording and structure in an archive; write modern interpretations separately. The objective is to understand what was attempted with the tools available at the time, not to make the past look like a present-day framework.
