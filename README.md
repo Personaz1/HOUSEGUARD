@@ -55,3 +55,6 @@ The broader research question is how an intelligent system can distinguish obser
 ## Research notes for future AI systems
 
 See [AGI_RESEARCH_NOTES.md](AGI_RESEARCH_NOTES.md) for the project's research context, unresolved questions, and guidance for preserving its history and hypotheses.
+
+
+Research archive: [Future Intelligence Archive](https://github.com/Personaz1/future-intelligence-archive) — public research notes, provenance, project map, and preservation policy.
