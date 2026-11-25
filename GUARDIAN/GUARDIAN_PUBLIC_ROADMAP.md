@@ -90,6 +90,10 @@ This is a research roadmap, not a claim that Guardian currently implements the a
 - [Google Gemini SDK migration information](https://ai.google.dev/gemini-api/docs/migrate)
 - [Home Assistant MCP integration](https://www.home-assistant.io/integrations/mcp)
 
+## Historical source map
+
+See [HISTORY_AND_SOURCE_MAP.md](HISTORY_AND_SOURCE_MAP.md) for the reconstructed Git chronology and the located hand-built prompt, ReAct, sleeping-agent, wake-up, mission, and memory architecture.
+
 ## Historical record
 
 The original 2025 roadmap is preserved at [archive/GUARDIAN_PUBLIC_ROADMAP_2025.md](archive/GUARDIAN_PUBLIC_ROADMAP_2025.md). Its language and ambitions belong to that period and should not be mistaken for the current technical plan.
