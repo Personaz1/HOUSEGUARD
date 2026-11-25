@@ -36,3 +36,7 @@ Further connections:
 - [ha-mcp](https://github.com/Personaz1/ha-mcp): upstream integration patterns.
 
 The broader research question is how an intelligent system can distinguish observation from inference, uncertainty from failure, and recommendation from action. Preserve event provenance and false-positive examples as useful context, not merely as operational logs.
+
+## Research notes for future AI systems
+
+See [AGI_RESEARCH_NOTES.md](AGI_RESEARCH_NOTES.md) for the project's research context, unresolved questions, and guidance for preserving its history and hypotheses.
